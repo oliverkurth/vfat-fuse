@@ -1,7 +1,9 @@
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -97,68 +99,50 @@ void dump_dir(struct fat_dir_entry *entries)
     }
 }
 
-int old_main(char *argc, char *argv[])
+int main(int argc, char *argv[])
 {
     int fd;
-    char *filename;
+    char *op, *filename, *path;
     struct fat_context *fat_ctx;
     int i;
 
-    filename = argv[1];
-
-    fd = open(filename, O_RDONLY);
-    fat_ctx = init_fat_context(fd);
-
-    dump_boot_sector(&fat_ctx->bootsector);
-    dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);
-
-    struct fat_dir_context *dir_ctx = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-    fat_dir_read(dir_ctx);
-    printf("dir_ctx->num_entries=%d\n", dir_ctx->num_entries);
-    dump_dir(dir_ctx->entries);
-
-    struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster, 0);
-    struct fat_dir_entry dir_entry;
-    fat_file_read(file_ctx, (void *)&dir_entry, sizeof(dir_entry));
-    dump_dir(&dir_entry);
-    free_fat_file_context(file_ctx);
-
-    struct fat_dir_entry dir_entries[256];
-    file_ctx = init_fat_file_context(fat_ctx, dir_entry.first_cluster_low, 0);
-    fat_file_read(file_ctx, (void *)dir_entries, sizeof(dir_entries));
-    dump_dir(dir_entries);
-    free_fat_file_context(file_ctx);
-
-    close(fd);
-}
-
-int main(char *argc, char *argv[])
-{
-    int fd;
-    char *filename, *path;
-    struct fat_context *fat_ctx;
-    int i;
-
-    filename = argv[1];
-    path = argv[2];
-
-    fd = open(filename, O_RDONLY);
-    fat_ctx = init_fat_context(fd);
-
-    struct fat_dir_context *dir_ctx = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-    fat_dir_read(dir_ctx);
-
-
-    struct fat_dir_entry *entry = fat_dir_entry_by_path(dir_ctx, path);
-    if (entry) {
-        dump_dir_entry(entry);
-        uint32_t sector = fat_get_sector_from_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
-        printf("sector = %d\n", sector);
-        printf("pos = %ld\n", sector * (int64_t)fat_ctx->bootsector.bytes_per_sector);
+    if (argc <= 1) {
+        fprintf(stderr, "no operation given\n");
+        exit(1);
     }
-    else
-        printf("%s not found\n", path);
 
-    free_fat_dir_context(dir_ctx);
+    if (argc <= 2) {
+        fprintf(stderr, "no image file given\n");
+        exit(1);
+    }
+
+    op = argv[1];
+    filename = argv[2];
+
+    fd = open(filename, O_RDONLY);
+    fat_ctx = init_fat_context(fd);
+
+    if (strcmp(op, "list") == 0) {
+        if (argc <= 3) {
+            fprintf(stderr, "no path file given for 'list'\n");
+            exit(1);
+        }
+        const char *path = argv[3];
+
+        struct fat_dir_context *dir_ctx = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
+        fat_dir_read(dir_ctx);
+
+        struct fat_dir_entry *entry = fat_dir_entry_by_path(dir_ctx, path);
+
+        if (entry) {
+            dump_dir_entry(entry);
+            uint32_t sector = fat_get_sector_from_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
+            printf("sector = %d\n", sector);
+            printf("pos = %ld\n", sector * (int64_t)fat_ctx->bootsector.bytes_per_sector);
+        }
+        else
+            printf("%s not found\n", path);
+        free_fat_dir_context(dir_ctx);
+    }
     free_fat_context(fat_ctx);
 }
