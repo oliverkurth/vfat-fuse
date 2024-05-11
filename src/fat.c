@@ -33,6 +33,15 @@ struct fat_context *init_fat_context(int fd)
     return ctx;
 }
 
+void free_fat_context(struct fat_context *ctx)
+{
+    if (ctx) {
+        if (ctx->fat)
+            free(ctx->fat);
+        free(ctx);
+    }
+}
+
 void free_fat_file_context(struct fat_file_context *ctx)
 {
     if (ctx) free(ctx);
@@ -94,10 +103,20 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
 
 void free_fat_dir_context(struct fat_dir_context *ctx)
 {
-    if (ctx){
-        free(ctx);
+    if (ctx) {
+        int i;
+
         if (ctx->entries)
             free(ctx->entries);
+        if (ctx->sub_dirs) {
+            for (i = 0; i < ctx->num_entries; i++) {
+                if (ctx->sub_dirs[i]) {
+                    free_fat_dir_context(ctx->sub_dirs[i]);
+                }
+            }
+            free(ctx->sub_dirs);
+        }
+        free(ctx);
     }
 }
 
@@ -128,14 +147,18 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
         free(ctx->entries);
     ctx->entries = malloc(dir_size);
 
+    ctx->num_entries = dir_size / sizeof(struct fat_dir_entry);
+
+    if (ctx->sub_dirs)
+        free(ctx->sub_dirs);
+    ctx->sub_dirs = calloc(ctx->num_entries, sizeof(struct fat_dir_context *));
+
     ssize_t rd = fat_file_read(file_ctx, (void *)ctx->entries, dir_size);
     if (rd < dir_size) {
         fprintf(stderr, "fat_file_read failed: %s\n", strerror(errno));
         free(ctx->entries);
         return rd;
     }
-
-    ctx->num_entries = dir_size / sizeof(struct fat_dir_entry);
 
     free_fat_file_context(file_ctx);
 }
@@ -188,9 +211,13 @@ struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const c
             if (strcasecmp(path_copy, sfn_pretty) == 0) {
                 if (path1 == NULL)
                     return entry;
-                else {
-                    struct fat_dir_context *fat_subdir = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
-                    return fat_dir_entry_by_path(fat_subdir, path1);
+                else if (entry->attr & FAT_ATTR_DIRECTORY) {
+                    if (ctx->sub_dirs[i] == NULL) {
+                        ctx->sub_dirs[i] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+                    }
+                    return fat_dir_entry_by_path(ctx->sub_dirs[i], path1);
+                } else {
+                    fprintf(stderr, "not a directory: %s\n", sfn_pretty);
                 }
             }
         }

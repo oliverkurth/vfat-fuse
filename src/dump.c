@@ -158,4 +158,7 @@ int main(char *argc, char *argv[])
     }
     else
         printf("%s not found\n", path);
+
+    free_fat_dir_context(dir_ctx);
+    free_fat_context(fat_ctx);
 }

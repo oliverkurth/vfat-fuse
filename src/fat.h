@@ -113,6 +113,7 @@ struct fat_dir_context {
     int32_t first_cluster;
     int32_t num_entries;
     struct fat_dir_entry *entries;
+    struct fat_dir_context **sub_dirs;
 };
 
 struct fat_file_context {
@@ -123,17 +124,18 @@ struct fat_file_context {
 };
 
 struct fat_context *init_fat_context(int fd);
+void free_fat_context(struct fat_context *ctx);
 
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 void free_fat_file_context(struct fat_file_context *ctx);
 
 int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 
+struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len);
 
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster);
-struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
-
+void free_fat_dir_context(struct fat_dir_context *ctx);
 ssize_t fat_dir_read(struct fat_dir_context *ctx);
 
 uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry);
