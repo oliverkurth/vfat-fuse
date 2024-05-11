@@ -1,0 +1,199 @@
+#include <asm/byteorder.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "fat.h"
+
+
+struct fat_context *init_fat_context(int fd)
+{
+    struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
+    read(fd, &ctx->bootsector, sizeof(ctx->bootsector));
+    read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
+
+    int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
+    int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
+
+    ctx->fat = malloc(fat_sectors * ctx->bootsector.bytes_per_sector);
+
+    pread(fd, ctx->fat,
+          fat_sectors * ctx->bootsector.bytes_per_sector,
+          fat_start_sector * ctx->bootsector.bytes_per_sector);
+
+    ctx->data_start_sector = fat_start_sector + fat_sectors;
+
+    ctx->fd = fd;
+
+    return ctx;
+}
+
+void free_fat_file_context(struct fat_file_context *ctx)
+{
+    if (ctx) free(ctx);
+}
+
+struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size)
+{
+    struct fat_file_context *ctx = calloc(sizeof(struct fat_file_context), 1);
+    ctx->fat_ctx = fat_ctx;
+    ctx->current_cluster = first_cluster;
+    ctx->current_pos = 0;
+    ctx->size = size;
+
+    return ctx;
+}
+
+int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster)
+{
+    return fat_ctx->data_start_sector + (cluster - 2) * fat_ctx->bootsector.sectors_per_cluster;
+}
+
+ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
+{
+    struct fat_context *fat_ctx = file_ctx->fat_ctx;
+    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+    uint8_t *ptr = (uint8_t *)buf;
+
+    while ((len > 0) && (file_ctx->current_cluster > 0)) {
+        int64_t sector = fat_ctx->data_start_sector + (file_ctx->current_cluster - 2) * fat_ctx->bootsector.sectors_per_cluster; /* sector of current cluster */
+        uint32_t skip = file_ctx->current_pos & (bytes_per_cluster - 1);
+
+        uint32_t read_len = bytes_per_cluster - skip;
+        if (len < read_len)
+            read_len = len;
+
+        printf("sector=%ld, skip=%d, read_len=%d\n", sector, skip, read_len);
+
+        off_t p = (sector * fat_ctx->bootsector.bytes_per_sector) + skip;
+
+        printf("p=%d\n", (int)p);
+
+        ssize_t rd = pread(fat_ctx->fd, ptr, read_len, p);
+        if (rd < 0) {
+            fprintf(stderr, "pread failed: %s\n", strerror(errno));
+            return rd;
+        }
+        if (rd < read_len) {
+            fprintf(stderr, "short pread (%d < %d), p=%d: %s\n", (int)rd, read_len, (int)p, strerror(errno));
+            return -1;
+        }
+        ptr += read_len;
+        len -= read_len;
+        file_ctx->current_pos += read_len;
+        if (skip + read_len >= bytes_per_cluster)
+            file_ctx->current_cluster = fat_ctx->fat[file_ctx->current_cluster] & 0x0FFFFFFF;
+    }
+    return ptr - (uint8_t *)buf;
+}
+
+void free_fat_dir_context(struct fat_dir_context *ctx)
+{
+    if (ctx){
+        free(ctx);
+        if (ctx->entries)
+            free(ctx->entries);
+    }
+}
+
+struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+{
+    struct fat_dir_context *ctx = calloc(sizeof(struct fat_dir_context), 1);
+    ctx->fat_ctx = fat_ctx;
+    ctx->first_cluster = first_cluster;
+}
+
+// TODO: use fat_file_context as arg
+ssize_t fat_dir_read(struct fat_dir_context *ctx)
+{
+    struct fat_context *fat_ctx = ctx->fat_ctx;
+    size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
+    struct fat_file_context *file_ctx = init_fat_file_context(ctx->fat_ctx, ctx->first_cluster, 0);
+    int32_t cluster, num_clusters = 0;
+
+    for(cluster = ctx->first_cluster;
+        cluster && ((cluster & 0x0FFFFFF8) != 0x0FFFFFF8);
+        cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
+        num_clusters++;
+    }
+    printf("num_clusters = %d\n", num_clusters);
+    ssize_t dir_size = num_clusters * bytes_per_cluster;
+
+    if (ctx->entries)
+        free(ctx->entries);
+    ctx->entries = malloc(dir_size);
+
+    ssize_t rd = fat_file_read(file_ctx, (void *)ctx->entries, dir_size);
+    if (rd < dir_size) {
+        fprintf(stderr, "fat_file_read failed: %s\n", strerror(errno));
+        free(ctx->entries);
+        return rd;
+    }
+
+    ctx->num_entries = dir_size / sizeof(struct fat_dir_entry);
+
+    free_fat_file_context(file_ctx);
+}
+
+const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
+{
+    int i;
+    char *ptr = buf;
+
+    char *slf = entry->name;
+    for (i = 0; i < 8 && slf[i] != ' '; i++) {
+        *ptr++ = tolower(slf[i]);
+    }
+    if (slf[8] != ' ')
+        *ptr++ = '.';
+    for (i = 8; i < 11 && slf[i] != ' '; i++) {
+        *ptr++ = tolower(slf[i]);
+    }
+    *ptr = 0;
+    return buf;
+}
+
+uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
+{
+    return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
+}
+
+// TODO: return fat_file_context
+struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const char *path)
+{
+    char path_copy[strlen(path)+1];
+    char *path1;
+    
+    if (!ctx->entries)
+        fat_dir_read(ctx);
+
+    strcpy(path_copy, path);
+    path1 = path_copy;
+    strsep(&path1, "/");
+
+    printf("path_copy = %s, path1 = %s\n", path_copy, path1);
+
+    int i;
+    for (i = 0; ctx->entries[i].name[0]; i++) {
+        struct fat_dir_entry *entry = &ctx->entries[i];
+        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+            char sfn_pretty[12];
+            fat_file_sfn_pretty(entry, sfn_pretty);
+            printf("pretty name = %s\n", sfn_pretty);
+            if (strcasecmp(path_copy, sfn_pretty) == 0) {
+                if (path1 == NULL)
+                    return entry;
+                else {
+                    struct fat_dir_context *fat_subdir = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+                    return fat_dir_entry_by_path(fat_subdir, path1);
+                }
+            }
+        }
+    }
+    return NULL;
+}
