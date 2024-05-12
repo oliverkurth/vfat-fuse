@@ -237,7 +237,7 @@ struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const c
             fat_file_sfn_pretty(entry, sfn_pretty);
             printf("pretty name = %s\n", sfn_pretty);
             if (strcasecmp(path_copy, sfn_pretty) == 0) {
-                if (path1 == NULL)
+                if (path1 == NULL || path1[0] == 0)
                     return entry;
                 else if (entry->attr & FAT_ATTR_DIRECTORY) {
                     if (ctx->sub_dirs[i] == NULL) {
