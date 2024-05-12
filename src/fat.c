@@ -163,6 +163,34 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
     free_fat_file_context(file_ctx);
 }
 
+const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
+{
+    int date = 0, time = 0;
+    int tenths = 0;
+
+    if (type == FAT_DATE_WRITE) {
+        date = entry->write_date;
+        time = entry->write_time;
+    } else if (type == FAT_DATE_CREATION) {
+        date = entry->creation_date;
+        time = entry->creation_time;
+        tenths = entry->creation_time_tenth;
+    } else if (type == FAT_DATE_ACCESS) {
+        date = entry->last_access_date;
+        time = 0;
+    }
+
+    int year = (date >> 9) + 1980;
+    int month = (date >> 5) & 0x0f;
+    int day = date & 0x1f;
+
+    int hour = time >> 11;
+    int minute = (time >> 5) & 0x3f;
+    int second = (time & 0x3f) * 2;
+
+    snprintf(buf, buf_size, "%4d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, hour);
+}
+
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
 {
     int i;

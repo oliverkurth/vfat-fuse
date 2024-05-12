@@ -88,6 +88,17 @@ void dump_dir_entry(struct fat_dir_entry *entry)
     }  
 }
 
+void print_dir_entry(struct fat_dir_entry *entry)
+{
+    char sfn_pretty[12], date[20];
+    fat_file_sfn_pretty(entry, sfn_pretty);
+    fat_pretty_date(entry, date, sizeof(date), FAT_DATE_WRITE);
+    if (entry->attr & FAT_ATTR_DIRECTORY)
+        printf("%-12s %s <dir>\n", sfn_pretty, date);
+    else
+        printf("%-12s %s %d\n", sfn_pretty, date, entry->filesize);
+}
+
 void dump_dir(struct fat_dir_entry *entries)
 {
     int i;
@@ -135,10 +146,10 @@ int main(int argc, char *argv[])
         struct fat_dir_entry *entry = fat_dir_entry_by_path(dir_ctx, path);
 
         if (entry) {
-            dump_dir_entry(entry);
-            uint32_t sector = fat_get_sector_from_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
-            printf("sector = %d\n", sector);
-            printf("pos = %ld\n", sector * (int64_t)fat_ctx->bootsector.bytes_per_sector);
+            print_dir_entry(entry);
+//            uint32_t sector = fat_get_sector_from_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
+//            printf("sector = %d\n", sector);
+//            printf("pos = %ld\n", sector * (int64_t)fat_ctx->bootsector.bytes_per_sector);
         }
         else
             printf("%s not found\n", path);

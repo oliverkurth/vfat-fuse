@@ -94,6 +94,9 @@ struct fat_lfn_entry {
 #define FAT_ATTR_DIRECTORY 0x10
 #define FAT_ATTR_LONG_FILE_NAME 0x0F
 
+#define FAT_DATE_WRITE 1
+#define FAT_DATE_CREATION 2
+#define FAT_DATE_ACCESS 3
 
 struct fat_context {
     struct fat_boot_sector bootsector;
@@ -141,3 +144,6 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx);
 uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry);
     
 struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const char *path);
+
+const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
+const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);
