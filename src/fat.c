@@ -69,6 +69,13 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
     uint8_t *ptr = (uint8_t *)buf;
 
+    if (file_ctx->size > 0) {
+        /* do not read beyond end of file */
+        if ((file_ctx->current_pos + len) > file_ctx->size) {
+            len = file_ctx->size - file_ctx->current_pos;
+        }
+    }
+
     while ((len > 0) && (file_ctx->current_cluster > 0)) {
         int64_t sector = fat_ctx->data_start_sector + (file_ctx->current_cluster - 2) * fat_ctx->bootsector.sectors_per_cluster; /* sector of current cluster */
         uint32_t skip = file_ctx->current_pos & (bytes_per_cluster - 1);
@@ -77,11 +84,7 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
         if (len < read_len)
             read_len = len;
 
-        printf("sector=%ld, skip=%d, read_len=%d\n", sector, skip, read_len);
-
         off_t p = (sector * fat_ctx->bootsector.bytes_per_sector) + skip;
-
-        printf("p=%d\n", (int)p);
 
         ssize_t rd = pread(fat_ctx->fd, ptr, read_len, p);
         if (rd < 0) {
@@ -140,7 +143,6 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
         cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
         num_clusters++;
     }
-    printf("num_clusters = %d\n", num_clusters);
     ssize_t dir_size = num_clusters * bytes_per_cluster;
 
     if (ctx->entries)
@@ -227,15 +229,12 @@ struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const c
     path1 = path_copy;
     strsep(&path1, "/");
 
-    printf("path_copy = %s, path1 = %s\n", path_copy, path1);
-
     int i;
     for (i = 0; ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
         if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
             char sfn_pretty[12];
             fat_file_sfn_pretty(entry, sfn_pretty);
-            printf("pretty name = %s\n", sfn_pretty);
             if (strcasecmp(path_copy, sfn_pretty) == 0) {
                 if (path1 == NULL || path1[0] == 0)
                     return entry;

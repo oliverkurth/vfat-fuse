@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
     fd = open(filename, O_RDONLY);
     fat_ctx = init_fat_context(fd);
 
-    if (strcmp(op, "list") == 0) {
+    if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0) {
         if (argc <= 3) {
             fprintf(stderr, "no path file given for 'list'\n");
             exit(1);
@@ -146,10 +146,16 @@ int main(int argc, char *argv[])
         struct fat_dir_entry *entry = fat_dir_entry_by_path(dir_ctx, path);
 
         if (entry) {
-            print_dir_entry(entry);
-//            uint32_t sector = fat_get_sector_from_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
-//            printf("sector = %d\n", sector);
-//            printf("pos = %ld\n", sector * (int64_t)fat_ctx->bootsector.bytes_per_sector);
+            if (strcmp(op, "list") == 0) {
+                print_dir_entry(entry);
+            } else if (strcmp(op, "cat") == 0) {
+                struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
+                int rd;
+                char buf[333];
+                while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
+                    write(1, buf, rd);
+                }
+            }
         }
         else
             printf("%s not found\n", path);
