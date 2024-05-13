@@ -68,6 +68,12 @@ void dump_boot_sector_ext32(struct fat_boot_sector_ext32 *bs)
     printf("boot_signature = %2x\n", (int)bs->boot_signature);
 }
 
+void dump_info(struct fat_context *fat_ctx)
+{
+    dump_boot_sector(&fat_ctx->bootsector);
+    dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);
+}
+
 void dump_dir_entry(struct fat_dir_entry *entry)
 {
     if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
@@ -179,7 +185,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0 || strcmp(op, "attr") == 0){
+    if (strcmp(op, "info") == 0) {
+        dump_info(fat_ctx);
+    } else if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0 || strcmp(op, "attr") == 0){
         if (argc <= 3) {
             fprintf(stderr, "no path file given for %s\n", op);
             exit(1);
