@@ -91,7 +91,6 @@ struct fat_lfn_entry {
 #define FAT_ATTR_VOLUME_ID 0x08
 #define FAT_ATTR_DIRECTORY 0x10
 #define FAT_ATTR_ARCHIVE 0x20
-#define FAT_ATTR_DIRECTORY 0x10
 #define FAT_ATTR_LONG_FILE_NAME 0x0F
 
 #define FAT_DATE_WRITE 1
@@ -146,6 +145,7 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry);
 struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const char *path);
 int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char * name);
 struct fat_dir_entry *fat_dir_find_entry(struct fat_dir_context *ctx, const char *name);
+struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, const char *name);
 
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path);
 

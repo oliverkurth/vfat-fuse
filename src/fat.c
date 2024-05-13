@@ -190,6 +190,8 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
     int second = (time & 0x3f) * 2;
 
     snprintf(buf, buf_size, "%4d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, hour);
+
+    return buf;
 }
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
@@ -323,6 +325,7 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
         if (ctx->sub_dirs[index] == NULL) {
             struct fat_dir_entry *entry = &ctx->entries[index];
             ctx->sub_dirs[index] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+            fat_dir_read(ctx->sub_dirs[index]);
         }
         return ctx->sub_dirs[index];
     }

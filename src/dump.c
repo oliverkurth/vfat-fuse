@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -91,6 +92,17 @@ void dump_dir_entry(struct fat_dir_entry *entry)
     }  
 }
 
+void dump_dir(struct fat_dir_entry *entries)
+{
+    int i;
+
+    for(i = 0; entries[i].name[0]; i++) {
+        if (entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
+            dump_dir_entry(&entries[i]);
+        }
+    }
+}
+
 void print_dir_entry(struct fat_dir_entry *entry)
 {
     char sfn_pretty[12], date[20];
@@ -102,15 +114,37 @@ void print_dir_entry(struct fat_dir_entry *entry)
         printf("%-12s %s %d\n", sfn_pretty, date, entry->filesize);
 }
 
-void dump_dir(struct fat_dir_entry *entries)
+void list_dir(struct fat_dir_context *dir_ctx)
 {
     int i;
 
-    for(i = 0; entries[i].name[0]; i++) {
-        if (entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
-            dump_dir_entry(&entries[i]);
+    if (!dir_ctx->entries)
+        fat_dir_read(dir_ctx);
+
+    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+        if (dir_ctx->entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
+            print_dir_entry(&dir_ctx->entries[i]);
         }
     }
+}
+
+void print_attr(struct fat_dir_entry *entry)
+{
+    char sfn_pretty[12], date[20];
+    fat_file_sfn_pretty(entry, sfn_pretty);
+    printf("    name: %s\n", sfn_pretty);
+    printf("    size: %d\n", entry->filesize);
+    printf("    attr: %s %s %s %s %s\n",
+        entry->attr & FAT_ATTR_READ_ONLY ? "ro" : "rw",
+        entry->attr & FAT_ATTR_HIDDEN ? "hidden" : "not-hidden",
+        entry->attr & FAT_ATTR_SYSTEM ? "system" : "not-system",
+        entry->attr & FAT_ATTR_DIRECTORY ? "directory" : "file",
+        entry->attr & FAT_ATTR_ARCHIVE ? "archived" : "not-archived"
+    );
+    printf("  access: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_ACCESS));
+    printf("   write: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_WRITE));
+    printf("creation: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_CREATION));
+    printf(" cluster: %d\n", fat_dir_entry_get_cluster(entry));
 }
 
 int main(int argc, char *argv[])
@@ -134,11 +168,20 @@ int main(int argc, char *argv[])
     filename = argv[2];
 
     fd = open(filename, O_RDONLY);
-    fat_ctx = init_fat_context(fd);
+    if (fd < 0) {
+        fprintf(stderr, "could not open image file %s (%d)\n", strerror(errno), errno);
+        exit(1);
+    }
 
-    if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0) {
+    fat_ctx = init_fat_context(fd);
+    if (fat_ctx == NULL) {
+        fprintf(stderr, "initializing fat context failed.\n");
+        exit(1);
+    }
+
+    if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0 || strcmp(op, "attr") == 0){
         if (argc <= 3) {
-            fprintf(stderr, "no path file given for 'list'\n");
+            fprintf(stderr, "no path file given for %s\n", op);
             exit(1);
         }
         const char *path = argv[3];
@@ -156,27 +199,44 @@ int main(int argc, char *argv[])
         struct fat_dir_context *dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
         fat_dir_read(dir_ctx_root);
 
-        struct fat_dir_context *dir_ctx = fat_dir_context_by_path(dir_ctx_root, dir_name);
+        if (strcmp(base_name, ".") == 0 && strcmp(op, "list") == 0) {
+            list_dir(dir_ctx_root);
+        } else {
+            struct fat_dir_context *dir_ctx = fat_dir_context_by_path(dir_ctx_root, dir_name);
 
-        if (dir_ctx) {
-            int index = fat_dir_find_entry_index(dir_ctx, base_name);
+            if (dir_ctx) {
+                int index = fat_dir_find_entry_index(dir_ctx, base_name);
 
-            if (index >= 0) {
-                struct fat_dir_entry *entry = &dir_ctx->entries[index];
-                if (strcmp(op, "list") == 0) {
-                    print_dir_entry(entry);
-                } else if (strcmp(op, "cat") == 0) {
-                    struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
-                    int rd;
-                    char buf[333];
-                    while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
-                        write(1, buf, rd);
+                if (index >= 0) {
+                    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+                    if (strcmp(op, "list") == 0) {
+                        if (path[strlen(path)-1] == '/') {
+                            if (entry->attr != FAT_ATTR_DIRECTORY) {
+                                fprintf(stderr, "%s is not a directory\n", path);
+                            }
+                            struct fat_dir_context *subdir_ctx = fat_dir_find_dir_context(dir_ctx, base_name);
+                            if (subdir_ctx) {
+                                list_dir(subdir_ctx);
+                            }
+                        } else
+                            print_dir_entry(entry);
+                    } else if (strcmp(op, "cat") == 0) {
+                        struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
+                        int rd;
+                        char buf[333];
+                        while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
+                            write(1, buf, rd);
+                        }
+                        free_fat_file_context(file_ctx);
+                    } else if (strcmp(op, "attr") == 0) {
+                        print_attr(entry);
                     }
-                    free_fat_file_context(file_ctx);
+                } else {
+                    fprintf(stderr, "%s not found\n", base_name);
                 }
-            }
-        } else
-            fprintf(stderr, "%s not found\n", path);
+            } else
+                fprintf(stderr, "%s not found\n", path);
+        }
         free_fat_dir_context(dir_ctx_root);
     }
     free_fat_context(fat_ctx);
