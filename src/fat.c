@@ -130,7 +130,6 @@ struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_
     ctx->first_cluster = first_cluster;
 }
 
-// TODO: use fat_file_context as arg
 ssize_t fat_dir_read(struct fat_dir_context *ctx)
 {
     struct fat_context *fat_ctx = ctx->fat_ctx;
@@ -216,7 +215,6 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
     return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
 }
 
-// TODO: return fat_file_context
 struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const char *path)
 {
     char path_copy[strlen(path)+1];
@@ -248,6 +246,85 @@ struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const c
                 }
             }
         }
+    }
+    return NULL;
+}
+
+struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path)
+{
+    char path_copy[strlen(path)+1];
+    char *path1;
+
+    if (!ctx->entries)
+        fat_dir_read(ctx);
+
+    if (strcmp(path, ".") == 0)
+        return ctx;
+
+    strcpy(path_copy, path);
+    path1 = path_copy;
+    strsep(&path1, "/");
+
+    int i;
+    for (i = 0; ctx->entries[i].name[0]; i++) {
+        struct fat_dir_entry *entry = &ctx->entries[i];
+        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+            char sfn_pretty[12];
+            fat_file_sfn_pretty(entry, sfn_pretty);
+            if (strcasecmp(path_copy, sfn_pretty) == 0) {
+                if (entry->attr & FAT_ATTR_DIRECTORY) {
+                    if (ctx->sub_dirs[i] == NULL) {
+                        ctx->sub_dirs[i] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+                    }
+                    if (path1 == NULL || path1[0] == 0) {
+                        return ctx->sub_dirs[i];
+                    } else {
+                        return fat_dir_context_by_path(ctx->sub_dirs[i], path1);
+                    }
+                } else {
+                    fprintf(stderr, "not a directory: %s\n", sfn_pretty);
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char *name)
+{
+    if (!ctx->entries)
+        fat_dir_read(ctx);
+
+    int i;
+    for (i = 0; ctx->entries[i].name[0]; i++) {
+        struct fat_dir_entry *entry = &ctx->entries[i];
+        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+            char sfn_pretty[12];
+            fat_file_sfn_pretty(entry, sfn_pretty);
+            if (strcasecmp(name, sfn_pretty) == 0)
+                return i;
+        }
+    }
+    return -1;
+}
+
+struct fat_dir_entry *fat_dir_find_entry(struct fat_dir_context *ctx, const char *name)
+{
+    int index = fat_dir_find_entry_index(ctx, name);
+    if (index >= 0)
+        return &ctx->entries[index];
+    return NULL;
+}
+
+struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, const char *name)
+{
+    int index = fat_dir_find_entry_index(ctx, name);
+    if (index >= 0) {
+        if (ctx->sub_dirs[index] == NULL) {
+            struct fat_dir_entry *entry = &ctx->entries[index];
+            ctx->sub_dirs[index] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+        }
+        return ctx->sub_dirs[index];
     }
     return NULL;
 }

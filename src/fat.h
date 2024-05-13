@@ -144,6 +144,10 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx);
 uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry);
     
 struct fat_dir_entry *fat_dir_entry_by_path(struct fat_dir_context *ctx, const char *path);
+int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char * name);
+struct fat_dir_entry *fat_dir_find_entry(struct fat_dir_context *ctx, const char *name);
+
+struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path);
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);

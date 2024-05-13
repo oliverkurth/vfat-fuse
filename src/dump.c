@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -5,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <libgen.h>
 #include <unistd.h>
 
 #include "fat.h"
@@ -139,27 +142,42 @@ int main(int argc, char *argv[])
             exit(1);
         }
         const char *path = argv[3];
+        char path_copy[strlen(path) + 1];
+        char path_copy1[strlen(path) + 1];
 
-        struct fat_dir_context *dir_ctx = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-        fat_dir_read(dir_ctx);
+        strcpy(path_copy, path);
+        strcpy(path_copy1, path);
 
-        struct fat_dir_entry *entry = fat_dir_entry_by_path(dir_ctx, path);
+        char *base_name = basename(path_copy);
+        char *dir_name = dirname(path_copy1);
 
-        if (entry) {
-            if (strcmp(op, "list") == 0) {
-                print_dir_entry(entry);
-            } else if (strcmp(op, "cat") == 0) {
-                struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
-                int rd;
-                char buf[333];
-                while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
-                    write(1, buf, rd);
+        printf("base_name=%s, dir_name=%s\n", base_name, dir_name);
+
+        struct fat_dir_context *dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
+        fat_dir_read(dir_ctx_root);
+
+        struct fat_dir_context *dir_ctx = fat_dir_context_by_path(dir_ctx_root, dir_name);
+
+        if (dir_ctx) {
+            int index = fat_dir_find_entry_index(dir_ctx, base_name);
+
+            if (index >= 0) {
+                struct fat_dir_entry *entry = &dir_ctx->entries[index];
+                if (strcmp(op, "list") == 0) {
+                    print_dir_entry(entry);
+                } else if (strcmp(op, "cat") == 0) {
+                    struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
+                    int rd;
+                    char buf[333];
+                    while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
+                        write(1, buf, rd);
+                    }
+                    free_fat_file_context(file_ctx);
                 }
             }
-        }
-        else
-            printf("%s not found\n", path);
-        free_fat_dir_context(dir_ctx);
+        } else
+            fprintf(stderr, "%s not found\n", path);
+        free_fat_dir_context(dir_ctx_root);
     }
     free_fat_context(fat_ctx);
 }
