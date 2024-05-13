@@ -20,10 +20,10 @@ struct fat_context *init_fat_context(int fd)
     int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
     int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
-    ctx->fat = malloc(fat_sectors * ctx->bootsector.bytes_per_sector);
+    ctx->fat = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
 
     pread(fd, ctx->fat,
-          fat_sectors * ctx->bootsector.bytes_per_sector,
+          ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
           fat_start_sector * ctx->bootsector.bytes_per_sector);
 
     ctx->data_start_sector = fat_start_sector + fat_sectors;
