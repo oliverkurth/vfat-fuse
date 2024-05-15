@@ -74,13 +74,13 @@ struct fat_dir_entry {
 #pragma pack(push, 1)
 struct fat_lfn_entry {
     uint8_t seq_number;
-    char name1[10];
+    uint16_t name1[5];
     uint8_t attr;
     uint8_t type;
     uint8_t checksum;
-    char name2[12];
+    uint16_t name2[6];
     __le16 first_cluster_low;
-    char name3[4];
+    uint16_t name3[2];
 };
 #pragma pack(pop)
 
@@ -96,6 +96,9 @@ struct fat_lfn_entry {
 #define FAT_DATE_WRITE 1
 #define FAT_DATE_CREATION 2
 #define FAT_DATE_ACCESS 3
+
+#define FAT_LFN_LAST_LONG_ENTRY 0x40
+#define FAT_LFN_SEQ_MASK 0x3f
 
 struct fat_context {
     struct fat_boot_sector bootsector;
@@ -150,4 +153,5 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path);
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
+wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);

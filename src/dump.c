@@ -10,6 +10,8 @@
 #include <string.h>
 #include <libgen.h>
 #include <unistd.h>
+#include <wctype.h>
+#include <wchar.h>
 
 #include "fat.h"
 
@@ -134,11 +136,16 @@ void list_dir(struct fat_dir_context *dir_ctx)
     }
 }
 
-void print_attr(struct fat_dir_entry *entry)
+void print_attr(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 {
-    char sfn_pretty[12], date[20];
+    wchar_t lfn[256];
+    fat_file_lfn(dir_ctx, entry, lfn, 256);
+    printf("    name: %ls\n", lfn);
+
+    char sfn_pretty[12];
     fat_file_sfn_pretty(entry, sfn_pretty);
-    printf("    name: %s\n", sfn_pretty);
+    printf("     sfn: %s\n", sfn_pretty);
+
     printf("    size: %d\n", entry->filesize);
     printf("    attr: %s %s %s %s %s\n",
         entry->attr & FAT_ATTR_READ_ONLY ? "ro" : "rw",
@@ -147,6 +154,8 @@ void print_attr(struct fat_dir_entry *entry)
         entry->attr & FAT_ATTR_DIRECTORY ? "directory" : "file",
         entry->attr & FAT_ATTR_ARCHIVE ? "archived" : "not-archived"
     );
+
+    char date[20];
     printf("  access: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_ACCESS));
     printf("   write: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_WRITE));
     printf("creation: %s\n", fat_pretty_date(entry, date, sizeof(date), FAT_DATE_CREATION));
@@ -237,7 +246,7 @@ int main(int argc, char *argv[])
                         }
                         free_fat_file_context(file_ctx);
                     } else if (strcmp(op, "attr") == 0) {
-                        print_attr(entry);
+                        print_attr(dir_ctx, entry);
                     }
                 } else {
                     fprintf(stderr, "%s not found\n", base_name);

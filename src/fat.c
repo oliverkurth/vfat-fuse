@@ -212,6 +212,56 @@ const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
     return buf;
 }
 
+static
+uint8_t _lfn_checksum (const char *sfn)
+{
+    int i;
+    uint8_t sum;
+
+    for (i = sum = 0; i < 11; i++) { /* Calculate sum of DIR_Name[] field */
+        sum = (sum >> 1) + (sum << 7) + sfn[i];
+    }
+    return sum;
+}
+
+
+wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size)
+{
+    int i, j, pos = 0;
+    struct fat_lfn_entry *lfn_entry = (struct fat_lfn_entry *)&(entry[-1]);
+    uint8_t checksum = _lfn_checksum(entry->name);
+
+    for (i = 0; (struct fat_dir_entry *)lfn_entry >= ctx->entries; i++, lfn_entry--) {
+        if ((lfn_entry->seq_number & FAT_LFN_SEQ_MASK) - 1 != i) {
+            fprintf(stderr, "lfn sequence %d out of order (!= %d)\n", lfn_entry->seq_number, i+1);
+            return NULL;
+        }
+        if (lfn_entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+            fprintf(stderr, "lfn attr %x != FAT_ATTR_LONG_FILE_NAME\n", lfn_entry->attr);
+            return NULL;
+        }
+        if (lfn_entry->type != 0) {
+            fprintf(stderr, "lfn type %x != 0\n", lfn_entry->type);
+            return NULL;
+        }
+        if (lfn_entry->checksum != checksum) {
+            fprintf(stderr, "lfn checksum %x does not match %x\n", lfn_entry->checksum, checksum);
+            return NULL;
+        }
+        for (j = 0; j < 5 && pos < buf_size-1; pos++, j++)
+            buf[pos] = lfn_entry->name1[j];
+        for (j = 0; j < 6 && pos < buf_size-1; pos++, j++)
+            buf[pos] = lfn_entry->name2[j];
+        for (j = 0; j < 2 && pos < buf_size-1; pos++, j++)
+            buf[pos] = lfn_entry->name3[j];
+        if (lfn_entry->seq_number & FAT_LFN_LAST_LONG_ENTRY)
+            break;
+    }
+    buf[pos] = L'\0';
+
+    return buf;
+}
+
 uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
 {
     return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
