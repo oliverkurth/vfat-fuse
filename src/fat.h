@@ -156,3 +156,5 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);
 
 wchar_t *str_to_wstr(const char *str, wchar_t *wbuf);
+char *wstr_to_str(const wchar_t *wstr, char *buf);
+char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *entry, char *buf);

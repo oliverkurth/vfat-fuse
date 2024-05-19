@@ -236,13 +236,11 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
     uint8_t checksum = _lfn_checksum(entry->name);
 
     if (entry == ctx->entries) {
-        fprintf(stderr, "no lfn entried before this one\n");
         return NULL;
     }
 
     for (i = 0; (struct fat_dir_entry *)lfn_entry >= ctx->entries; i++, lfn_entry--) {
         if (lfn_entry->attr != FAT_ATTR_LONG_FILE_NAME) {
-            fprintf(stderr, "lfn attr %x != FAT_ATTR_LONG_FILE_NAME\n", lfn_entry->attr);
             return NULL;
         }
         if ((lfn_entry->seq_number & FAT_LFN_SEQ_MASK) - 1 != i) {
@@ -285,22 +283,26 @@ wchar_t *str_to_wstr(const char *str, wchar_t *wbuf)
         return wbuf;
 }
 
-bool name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry, const char *name)
+char *wstr_to_str(const wchar_t *wstr, char *buf)
+{
+    const wchar_t *wstr_ptr = wstr;
+    size_t wlen = wcslen(wstr);
+    ssize_t len = wcsrtombs(buf, &wstr_ptr, wlen+1, NULL);
+    if (wlen == len)
+        return buf;
+}
+
+bool fat_name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry, const char *name)
 {
     bool matched = false;
     wchar_t lfn[256];
     wchar_t wpath[strlen(name)+1];
 
     if (fat_file_lfn(ctx, entry, lfn, sizeof(lfn))) {
-        printf("got lfn\n");
         str_to_wstr(name, wpath);
-        printf("lfn: %ls\n", lfn);
-        printf("wpath: %ls\n", wpath);
-        printf("cmp: %ls == %ls\n", lfn, wpath);
         if (wcscasecmp(lfn, wpath) == 0)
             matched = true;
-    } else
-        printf("no lfn\n");
+    }
     if (!matched) {
         char sfn_pretty[12];
         fat_file_sfn_pretty(entry, sfn_pretty);
@@ -308,6 +310,18 @@ bool name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry
             matched = true;
     }
     return matched;
+}
+
+char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *entry, char *buf)
+{
+    wchar_t lfn[256];
+    if (fat_file_lfn(ctx, entry, lfn, sizeof(lfn))) {
+        wstr_to_str(lfn, buf);
+    } else {
+        char sfn_pretty[12];
+        fat_file_sfn_pretty(entry, buf);
+    }
+    return buf;
 }
 
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path)
@@ -329,7 +343,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
     for (i = 0; ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
         if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
-            if (name_matches_entry(ctx, entry, path_copy)) {
+            if (fat_name_matches_entry(ctx, entry, path_copy)) {
                 if (entry->attr & FAT_ATTR_DIRECTORY) {
                     if (ctx->sub_dirs[i] == NULL) {
                         ctx->sub_dirs[i] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
@@ -357,7 +371,7 @@ int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char *name)
     for (i = 0; ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
         if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
-            if (name_matches_entry(ctx, entry, name))
+            if (fat_name_matches_entry(ctx, entry, name))
                 return i;
         }
     }

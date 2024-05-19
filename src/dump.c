@@ -111,15 +111,17 @@ void dump_dir(struct fat_dir_entry *entries)
     }
 }
 
-void print_dir_entry(struct fat_dir_entry *entry)
+void print_dir_entry(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 {
-    char sfn_pretty[12], date[20];
-    fat_file_sfn_pretty(entry, sfn_pretty);
+    char date[20];
+    char name[256];
+
     fat_pretty_date(entry, date, sizeof(date), FAT_DATE_WRITE);
+    fat_dir_get_entry_name(dir_ctx, entry, name);
     if (entry->attr & FAT_ATTR_DIRECTORY)
-        printf("%-12s %s <dir>\n", sfn_pretty, date);
+        printf("%-12s <dir>      %s\n", date, name);
     else
-        printf("%-12s %s %d\n", sfn_pretty, date, entry->filesize);
+        printf("%-12s %10d %s\n", date, entry->filesize, name);
 }
 
 void list_dir(struct fat_dir_context *dir_ctx)
@@ -131,7 +133,7 @@ void list_dir(struct fat_dir_context *dir_ctx)
 
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
         if (dir_ctx->entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
-            print_dir_entry(&dir_ctx->entries[i]);
+            print_dir_entry(dir_ctx, &dir_ctx->entries[i]);
         }
     }
 }
@@ -205,10 +207,6 @@ int main(int argc, char *argv[])
         }
         const char *path = argv[3];
 
-        wchar_t wpath[strlen(path)+1];
-        str_to_wstr(path, wpath);
-        printf("wpath: %ls\n", wpath);
-
         char path_copy[strlen(path) + 1];
         char path_copy1[strlen(path) + 1];
 
@@ -243,7 +241,7 @@ int main(int argc, char *argv[])
                                 list_dir(subdir_ctx);
                             }
                         } else
-                            print_dir_entry(entry);
+                            print_dir_entry(dir_ctx, entry);
                     } else if (strcmp(op, "cat") == 0) {
                         struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
                         int rd;
