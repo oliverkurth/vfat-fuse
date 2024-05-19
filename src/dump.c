@@ -138,13 +138,15 @@ void list_dir(struct fat_dir_context *dir_ctx)
 
 void print_attr(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 {
-    wchar_t lfn[256];
-    fat_file_lfn(dir_ctx, entry, lfn, 256);
-    printf("    name: %ls\n", lfn);
-
     char sfn_pretty[12];
     fat_file_sfn_pretty(entry, sfn_pretty);
     printf("     sfn: %s\n", sfn_pretty);
+
+    wchar_t lfn[256];
+    if (fat_file_lfn(dir_ctx, entry, lfn, 256)) {
+        printf("     lfn: %ls\n", lfn);
+    } else
+        printf("     lfn: (none)\n");
 
     printf("    size: %d\n", entry->filesize);
     printf("    attr: %s %s %s %s %s\n",
@@ -202,6 +204,11 @@ int main(int argc, char *argv[])
             exit(1);
         }
         const char *path = argv[3];
+
+        wchar_t wpath[strlen(path)+1];
+        str_to_wstr(path, wpath);
+        printf("wpath: %ls\n", wpath);
+
         char path_copy[strlen(path) + 1];
         char path_copy1[strlen(path) + 1];
 
