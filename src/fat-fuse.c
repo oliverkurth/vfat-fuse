@@ -47,6 +47,7 @@ struct fatfuse_data {
     char *file_path;
     int fd;
     struct fat_context *fat_ctx;
+    struct fat_dir_context *dir_ctx_root;
 };
 
 int fatfuse_init(struct fatfuse_data *data)
@@ -63,7 +64,29 @@ int fatfuse_init(struct fatfuse_data *data)
         return 1;
     }
 
+    data->dir_ctx_root = init_fat_dir_context(data->fat_ctx, data->fat_ctx->bootsector_ext.ext32.root_cluster);
+    if (data->dir_ctx_root == NULL) {
+        fprintf(stderr, "could not initialize root dir context");
+        return 1;
+    }
+
+    fat_dir_read(data->dir_ctx_root);
+
     return 0;
+}
+
+void fatfuse_deinit(struct fatfuse_data *data)
+{
+    if (data->fd >= 0)
+        close(data->fd);
+    if (data->fat_ctx)
+        free_fat_context(data->fat_ctx);
+    if(data->dir_ctx_root)
+        free_fat_dir_context(data->dir_ctx_root);
+    if (data->file_path)
+        free(data->file_path);
+    if (data->options.file_path)
+        free(data->options.file_path);
 }
 
 static
@@ -96,7 +119,7 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
     struct stat st;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_context *fat_ctx = data->fat_ctx;
-    struct fat_dir_context *dir_ctx_root = NULL;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
     struct fat_dir_entry *entry = NULL;
 
     /* special case for root, which has no entry */
@@ -109,9 +132,6 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
         stbuf->st_mode |= S_IFDIR;
         return 0;
     }
-
-    dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-    fat_dir_read(dir_ctx_root);
 
     entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
     if (entry) {
@@ -141,7 +161,6 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
     }
 
 error:
-    if (dir_ctx_root) free_fat_dir_context(dir_ctx_root);
     return rc;
 }
 
@@ -153,10 +172,9 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     int rc = 0;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_context *fat_ctx = data->fat_ctx;
-    struct fat_dir_context *dir_ctx_root = NULL, *dir_ctx;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+    struct fat_dir_context *dir_ctx;
     int i;
-
-    dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
 
     if (strcmp(path, "/") == 0) {
         dir_ctx = dir_ctx_root;
@@ -205,11 +223,8 @@ static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
 	(void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_context *fat_ctx = data->fat_ctx;
-    struct fat_dir_context *dir_ctx_root = NULL;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
     struct fat_dir_entry *entry = NULL;
-
-    dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-    fat_dir_read(dir_ctx_root);
 
     entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
     if (entry) {
@@ -252,6 +267,7 @@ int main(int argc, char *argv[])
     struct fatfuse_data data = {0};
     int argc_saved;
     char **argv_saved;
+    int ret;
 
     if (fuse_opt_parse(&args, &data, option_spec, fatfuse_opt_proc) == -1)
             return 1;
@@ -281,5 +297,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    return fuse_main(argc_saved, argv_saved, &fatfuse_oper, (void *)&data);
+    ret = fuse_main(argc_saved, argv_saved, &fatfuse_oper, (void *)&data);
+    fatfuse_deinit(&data);
+    fuse_opt_free_args(&args);
+    return ret;
 }
