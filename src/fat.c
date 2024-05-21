@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <libgen.h>
 #include <unistd.h>
 #include <wctype.h>
@@ -198,6 +199,15 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
     return buf;
 }
 
+time_t fat_time(struct fat_dir_entry *entry, int type)
+{
+    char buf[20];
+    struct tm tm;
+    fat_pretty_date(entry, buf, sizeof(buf), type);
+    strptime(buf, "%Y-%m-%d %H:%M:%S", &tm);
+    return mktime(&tm);
+}
+
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
 {
     int i;
@@ -227,7 +237,6 @@ uint8_t _lfn_checksum (const char *sfn)
     }
     return sum;
 }
-
 
 wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size)
 {
