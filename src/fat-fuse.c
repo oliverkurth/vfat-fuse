@@ -66,17 +66,9 @@ int fatfuse_init(struct fatfuse_data *data)
     return 0;
 }
 
-static int fatfuse_getattr(const char *path, struct stat *stbuf,
-                           struct fuse_file_info *fi)
+static
+struct fat_dir_entry *_fatfuse_find_entry_by_path(struct fat_dir_context *dir_ctx_root, const char *path)
 {
-	(void) fi;
-    int rc = 0;
-    struct stat st;
-    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
-    struct fat_context *fat_ctx = data->fat_ctx;
-    struct fat_dir_context *dir_ctx_root = NULL, *dir_ctx = NULL;
-    struct fat_dir_entry *entry = NULL;
-    int index;
     char path_copy[strlen(path) + 1];
     char path_copy1[strlen(path) + 1];
 
@@ -86,45 +78,116 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
     char *base_name = basename(path_copy);
     char *dir_name = dirname(path_copy1);
 
+    struct fat_dir_context *dir_ctx = fat_dir_context_by_path(dir_ctx_root, dir_name);
+
+    if (dir_ctx) {
+        int index = fat_dir_find_entry_index(dir_ctx, base_name);
+        if (index >= 0)
+            return &dir_ctx->entries[index];
+    }
+    return NULL;
+}
+
+static int fatfuse_getattr(const char *path, struct stat *stbuf,
+                           struct fuse_file_info *fi)
+{
+	(void) fi;
+    int rc = 0;
+    struct stat st;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_context *fat_ctx = data->fat_ctx;
+    struct fat_dir_context *dir_ctx_root = NULL;
+    struct fat_dir_entry *entry = NULL;
+    int index;
+
+    /* special case for root, which has no entry */
+    if (strcmp(path, "/") == 0) {
+        if(fstat(data->fd, stbuf)) {
+            rc = -errno;
+            goto error;
+        }
+        stbuf->st_mode &= ~S_IFMT;
+        stbuf->st_mode |= S_IFDIR;
+        return 0;
+    }
+
     dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
     fat_dir_read(dir_ctx_root);
 
-    dir_ctx = fat_dir_context_by_path(dir_ctx_root, dir_name);
-    if (!dir_ctx) {
+    entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
+    if (entry) {
+        if(fstat(data->fd, &st)){
+            rc = -errno;
+            goto error;
+        }
+        stbuf->st_mode = (st.st_mode & ~S_IFMT) | (S_IXUSR|S_IXGRP|S_IXOTH);
+        if (entry->attr & FAT_ATTR_DIRECTORY)
+            stbuf->st_mode |= S_IFDIR;
+        else
+            stbuf->st_mode |= S_IFREG;
+        if (entry->attr & FAT_ATTR_READ_ONLY)
+            stbuf->st_mode &= ~(S_IWUSR|S_IWGRP|S_IWOTH);
+
+        stbuf->st_nlink = 1;
+        stbuf->st_uid = getuid();
+        stbuf->st_gid = getgid();
+        stbuf->st_size = entry->filesize;
+        stbuf->st_blocks = entry->filesize/512;
+        stbuf->st_atime = fat_time(entry, FAT_DATE_ACCESS);
+        stbuf->st_mtime = fat_time(entry, FAT_DATE_WRITE);
+        stbuf->st_ctime = fat_time(entry, FAT_DATE_WRITE);
+    } else {
         rc = -ENOENT;
         goto error;
-    }
-    if (dir_ctx) {
-        index = fat_dir_find_entry_index(dir_ctx, base_name);
-        if (index >= 0) {
-            entry = &dir_ctx->entries[index];
-
-            fstat(data->fd, &st);
-
-            stbuf->st_mode = (st.st_mode & ~S_IFMT) | (S_IXUSR|S_IXGRP|S_IXOTH);
-            if (entry->attr & FAT_ATTR_DIRECTORY)
-                stbuf->st_mode |= S_IFDIR;
-            else
-                stbuf->st_mode |= S_IFREG;
-            if (entry->attr & FAT_ATTR_READ_ONLY)
-                stbuf->st_mode &= ~(S_IWUSR|S_IWGRP|S_IWOTH);
-
-            stbuf->st_nlink = 1;
-            stbuf->st_uid = getuid();
-            stbuf->st_gid = getgid();
-            stbuf->st_size = entry->filesize;
-            stbuf->st_blocks = entry->filesize/512;
-            stbuf->st_atime = fat_time(entry, FAT_DATE_ACCESS);
-            stbuf->st_mtime = fat_time(entry, FAT_DATE_WRITE);
-            stbuf->st_ctime = fat_time(entry, FAT_DATE_WRITE);
-        } else {
-            rc = -ENOENT;
-            goto error;  
-        }
     }
 
 error:
     if (dir_ctx_root) free_fat_dir_context(dir_ctx_root);
+    return rc;
+}
+
+static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                           off_t offset, struct fuse_file_info *fi,
+                           enum fuse_readdir_flags flags)
+{
+	(void) fi;
+    int rc = 0;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_context *fat_ctx = data->fat_ctx;
+    struct fat_dir_context *dir_ctx_root = NULL, *dir_ctx;
+    int i;
+
+    dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
+
+    if (strcmp(path, "/") == 0) {
+        dir_ctx = dir_ctx_root;
+    } else {
+        dir_ctx = fat_dir_context_by_path(dir_ctx_root, path + 1);
+    }
+
+    if (!dir_ctx) {
+        rc = -EIO;
+        goto error;
+    }
+
+    if (!dir_ctx->entries)
+        fat_dir_read(dir_ctx);
+
+	filler(buf, ".", NULL, 0, 0);
+	filler(buf, "..", NULL, 0, 0);
+
+    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+        struct fat_dir_entry *entry = &dir_ctx->entries[i];
+        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+            char name[256];
+            fat_dir_get_entry_name(dir_ctx, entry, name);
+            if (filler(buf, name, NULL, 0, 0)) {
+                break;
+            }
+        }
+    }
+
+error:
 	return rc;
 }
 
@@ -147,6 +210,7 @@ int fatfuse_opt_proc(void *data, const char *arg,
 
 static const struct fuse_operations fatfuse_oper = {
     .getattr	= fatfuse_getattr,
+    .readdir	= fatfuse_readdir,
 };
 
 int main(int argc, char *argv[])
