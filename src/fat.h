@@ -138,6 +138,7 @@ int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluste
 
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len);
+ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len);
 
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster);
 void free_fat_dir_context(struct fat_dir_context *ctx);

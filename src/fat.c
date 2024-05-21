@@ -68,6 +68,77 @@ int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluste
     return fat_ctx->data_start_sector + (cluster - 2) * fat_ctx->bootsector.sectors_per_cluster;
 }
 
+uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
+{
+    return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
+}
+
+int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entry, off_t pos)
+{
+    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+    int32_t cluster;
+
+    if (pos > entry->filesize)
+        return -1;
+
+    for(cluster = fat_dir_entry_get_cluster(entry);
+        pos >= bytes_per_cluster && cluster && ((cluster & 0x0FFFFFF8) != 0x0FFFFFF8);
+        cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
+            pos -= bytes_per_cluster;
+    }
+
+    if ((cluster & 0x0FFFFFF8) == 0x0FFFFFF8)
+        return -1;
+
+    return cluster;
+}
+
+ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len)
+{
+    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+    uint8_t *ptr = (uint8_t *)buf;
+    int32_t current_cluster;
+
+    if (entry->filesize > 0) {
+        /* do not read beyond end of file */
+        if ((pos + len) > entry->filesize) {
+            len = entry->filesize - pos;
+        }
+    }
+
+    current_cluster = fat_find_cluster(fat_ctx, entry, pos);
+
+    if (current_cluster < 0)
+        return -1;
+
+    while ((len > 0) && (current_cluster > 0)) {
+        int64_t sector = fat_ctx->data_start_sector + (current_cluster - 2) * fat_ctx->bootsector.sectors_per_cluster; /* sector of current cluster */
+        uint32_t skip = pos & (bytes_per_cluster - 1);
+
+        uint32_t read_len = bytes_per_cluster - skip;
+        if (len < read_len)
+            read_len = len;
+
+        off_t p = (sector * fat_ctx->bootsector.bytes_per_sector) + skip;
+
+        ssize_t rd = pread(fat_ctx->fd, ptr, read_len, p);
+        if (rd < 0) {
+            fprintf(stderr, "pread failed: %s\n", strerror(errno));
+            return rd;
+        }
+        if (rd < read_len) {
+            fprintf(stderr, "short pread (%d < %d), p=%d: %s\n", (int)rd, read_len, (int)p, strerror(errno));
+            return -1;
+        }
+        ptr += read_len;
+        len -= read_len;
+        pos += read_len;
+        if (skip + read_len >= bytes_per_cluster)
+            current_cluster = fat_ctx->fat[current_cluster] & 0x0FFFFFFF;
+    }
+    return ptr - (uint8_t *)buf;
+}
+
 ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
 {
     struct fat_context *fat_ctx = file_ctx->fat_ctx;
@@ -145,7 +216,7 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
     for(cluster = ctx->first_cluster;
         cluster && ((cluster & 0x0FFFFFF8) != 0x0FFFFFF8);
         cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
-        num_clusters++;
+            num_clusters++;
     }
     ssize_t dir_size = num_clusters * bytes_per_cluster;
 
@@ -201,11 +272,14 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
 
 time_t fat_time(struct fat_dir_entry *entry, int type)
 {
+    time_t time;
     char buf[20];
-    struct tm tm;
+    struct tm tm = {0};
+
     fat_pretty_date(entry, buf, sizeof(buf), type);
     strptime(buf, "%Y-%m-%d %H:%M:%S", &tm);
-    return mktime(&tm);
+    time = mktime(&tm);
+    return time;
 }
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
@@ -276,11 +350,6 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
     buf[pos] = L'\0';
 
     return buf;
-}
-
-uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
-{
-    return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
 }
 
 wchar_t *str_to_wstr(const char *str, wchar_t *wbuf)

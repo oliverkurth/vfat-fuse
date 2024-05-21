@@ -98,7 +98,6 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
     struct fat_context *fat_ctx = data->fat_ctx;
     struct fat_dir_context *dir_ctx_root = NULL;
     struct fat_dir_entry *entry = NULL;
-    int index;
 
     /* special case for root, which has no entry */
     if (strcmp(path, "/") == 0) {
@@ -191,6 +190,37 @@ error:
 	return rc;
 }
 
+static int fatfuse_open(const char *path, struct fuse_file_info *fi)
+{
+	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+		return -EACCES;
+
+	return 0;
+}
+
+static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
+		                struct fuse_file_info *fi)
+{
+	int rd = 0;
+	(void) fi;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_context *fat_ctx = data->fat_ctx;
+    struct fat_dir_context *dir_ctx_root = NULL;
+    struct fat_dir_entry *entry = NULL;
+
+    dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
+    fat_dir_read(dir_ctx_root);
+
+    entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
+    if (entry) {
+        rd = fat_file_pread(fat_ctx, entry, buf, offset, size);
+    } else {
+        rd = -EIO;
+    }
+
+	return rd;
+}
+
 static
 int fatfuse_opt_proc(void *data, const char *arg,
 			         int key, struct fuse_args *outargs)
@@ -211,6 +241,8 @@ int fatfuse_opt_proc(void *data, const char *arg,
 static const struct fuse_operations fatfuse_oper = {
     .getattr	= fatfuse_getattr,
     .readdir	= fatfuse_readdir,
+    .open       = fatfuse_open,
+    .read       = fatfuse_read,
 };
 
 int main(int argc, char *argv[])
