@@ -19,23 +19,35 @@
 struct fat_context *init_fat_context(int fd)
 {
     struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
-    read(fd, &ctx->bootsector, sizeof(ctx->bootsector));
-    read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
+    int rc;
+
+    rc = read(fd, &ctx->bootsector, sizeof(ctx->bootsector));
+    if (rc != sizeof(ctx->bootsector))
+        return NULL;
+
+    rc = read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
+    if (rc != sizeof(ctx->bootsector_ext))
+        return NULL;
 
     int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
     int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
     ctx->fat = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
 
-    pread(fd, ctx->fat,
-          ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
-          fat_start_sector * ctx->bootsector.bytes_per_sector);
+    rc = pread(fd, ctx->fat,
+               ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
+               fat_start_sector * ctx->bootsector.bytes_per_sector);
+
+    if (rc != ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector)
+        goto error;
 
     ctx->data_start_sector = fat_start_sector + fat_sectors;
-
     ctx->fd = fd;
 
     return ctx;
+error:
+    free(ctx);
+    return NULL;
 }
 
 void free_fat_context(struct fat_context *ctx)

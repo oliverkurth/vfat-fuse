@@ -246,7 +246,9 @@ int main(int argc, char *argv[])
                         int rd;
                         char buf[333];
                         while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
-                            write(1, buf, rd);
+                            if (write(1, buf, rd) != rd) {
+                                fprintf(stderr, "failed to write t stdout: %s (%d)", strerror(errno), errno);
+                            }
                         }
                         free_fat_file_context(file_ctx);
                     } else if (strcmp(op, "attr") == 0) {
