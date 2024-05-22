@@ -44,6 +44,24 @@ void dump_boot_sector(struct fat_boot_sector *bs)
     printf("total_sectors32 = %d\n", (int)bs->total_sectors32);
 }
 
+void dump_boot_sector_ext16(struct fat_boot_sector_ext16 *bs)
+{
+    char volume_label[12];
+    char file_system_type[9];
+
+    printf("drive_num = %d\n", (int)bs->drive_num);
+    printf("ext_boot_signature = %d\n", (int)bs->ext_boot_signature);
+    printf("volume_id = %8x\n", bs->volume_id);
+
+    strncpy(volume_label, bs->volume_label, 11);
+    volume_label[11] = 0;
+    printf("volume_label = %s\n", volume_label);
+
+    strncpy(file_system_type, bs->file_system_type, 8);
+    file_system_type[8] = 0;
+    printf("file_system_type = %s\n", file_system_type);
+}
+
 void dump_boot_sector_ext32(struct fat_boot_sector_ext32 *bs)
 {
     char volume_label[12];
@@ -73,7 +91,13 @@ void dump_boot_sector_ext32(struct fat_boot_sector_ext32 *bs)
 void dump_info(struct fat_context *fat_ctx)
 {
     dump_boot_sector(&fat_ctx->bootsector);
-    dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);
+
+    printf("type is %s\n", fat_ctx->type == FAT_TYPE32 ? "FAT32" : "FAT16/12");
+
+    if (fat_ctx->type == FAT_TYPE32)
+        dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);
+    else
+        dump_boot_sector_ext16(&fat_ctx->bootsector_ext.ext16);
 }
 
 void dump_dir_entry(struct fat_dir_entry *entry)

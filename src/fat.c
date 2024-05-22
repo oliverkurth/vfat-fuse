@@ -34,9 +34,9 @@ struct fat_context *init_fat_context(int fd)
         /* FAT32 */
         int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
-        ctx->fat = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
+        ctx->fat32 = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
 
-        rc = pread(fd, ctx->fat,
+        rc = pread(fd, ctx->fat32,
                    ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
                    fat_start_sector * ctx->bootsector.bytes_per_sector);
 
@@ -48,8 +48,20 @@ struct fat_context *init_fat_context(int fd)
         ctx->type = FAT_TYPE32;
     } else {
         /* FAT16 or FAT12 */
-        fprintf(stderr, "only type FAT32 is supported so far\n");
-        goto error;
+        int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
+
+        ctx->fat16 = malloc(ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector);
+
+        rc = pread(fd, ctx->fat16,
+                   ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector,
+                   fat_start_sector * ctx->bootsector.bytes_per_sector);
+
+        if (rc != ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector)
+            goto error;
+
+        ctx->data_start_sector = fat_start_sector + fat_sectors;
+
+        ctx->type = FAT_TYPE16;
     }
 
     ctx->fd = fd;
@@ -67,8 +79,10 @@ error:
 void free_fat_context(struct fat_context *ctx)
 {
     if (ctx) {
-        if (ctx->fat)
-            free(ctx->fat);
+        if (ctx->fat32)
+            free(ctx->fat32);
+        if (ctx->fat16)
+            free(ctx->fat16);
         free(ctx);
     }
 }
@@ -101,7 +115,7 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
 
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
-    return fat_ctx->fat[cluster] & 0x0FFFFFFF;
+    return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
 }
 
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)

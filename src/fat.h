@@ -113,7 +113,9 @@ struct fat_context {
     int type;
     int fd;
 
-    int32_t *fat;
+    int32_t *fat32;
+    int16_t *fat16;
+
     int64_t data_start_sector;
 };
 
