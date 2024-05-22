@@ -168,6 +168,8 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                            enum fuse_readdir_flags flags)
 {
     (void) fi;
+    (void) offset;
+    (void) flags;
     int rc = 0;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
@@ -207,6 +209,7 @@ error:
 
 static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 {
+    (void) path;
 	if ((fi->flags & O_ACCMODE) != O_RDONLY)
 		return -EACCES;
 
@@ -237,6 +240,7 @@ static
 int fatfuse_opt_proc(void *data, const char *arg,
 			         int key, struct fuse_args *outargs)
 {
+    (void) outargs;
     struct fatfuse_data *fatfuse_data = (struct fatfuse_data *)data;
 
 	switch (key) {

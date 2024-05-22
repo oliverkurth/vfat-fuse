@@ -123,7 +123,7 @@ struct fat_dir_context {
 
 struct fat_file_context {
     struct fat_context *fat_ctx;
-    ssize_t size;
+    size_t size;
     off_t current_pos;
     int32_t current_cluster;
 };

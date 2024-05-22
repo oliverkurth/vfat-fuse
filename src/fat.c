@@ -340,11 +340,11 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
             fprintf(stderr, "lfn checksum %x does not match %x\n", lfn_entry->checksum, checksum);
             return NULL;
         }
-        for (j = 0; j < 5 && pos < buf_size-1; pos++, j++)
+        for (j = 0; j < 5 && pos < (int)buf_size-1; pos++, j++)
             buf[pos] = lfn_entry->name1[j];
-        for (j = 0; j < 6 && pos < buf_size-1; pos++, j++)
+        for (j = 0; j < 6 && pos < (int)buf_size-1; pos++, j++)
             buf[pos] = lfn_entry->name2[j];
-        for (j = 0; j < 2 && pos < buf_size-1; pos++, j++)
+        for (j = 0; j < 2 && pos < (int)buf_size-1; pos++, j++)
             buf[pos] = lfn_entry->name3[j];
         if (lfn_entry->seq_number & FAT_LFN_LAST_LONG_ENTRY)
             break;
@@ -357,7 +357,7 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
 wchar_t *str_to_wstr(const char *str, wchar_t *wbuf)
 {
     const char *str_ptr = str;
-    size_t len = strlen(str);
+    ssize_t len = strlen(str);
     ssize_t wlen = mbsrtowcs(wbuf, &str_ptr, len+1, NULL);
     if (wlen == len)
         return wbuf;
@@ -367,7 +367,7 @@ wchar_t *str_to_wstr(const char *str, wchar_t *wbuf)
 char *wstr_to_str(const wchar_t *wstr, char *buf)
 {
     const wchar_t *wstr_ptr = wstr;
-    size_t wlen = wcslen(wstr);
+    ssize_t wlen = wcslen(wstr);
     ssize_t len = wcsrtombs(buf, &wstr_ptr, wlen+1, NULL);
     if (wlen == len)
         return buf;
