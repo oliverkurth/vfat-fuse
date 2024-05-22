@@ -99,6 +99,16 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
     return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
 }
 
+uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
+{
+    return fat_ctx->fat[cluster] & 0x0FFFFFFF;
+}
+
+bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)
+{
+    return (cluster & 0x0FFFFFF8) == 0x0FFFFFF8;
+}
+
 int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entry, off_t pos)
 {
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
@@ -108,12 +118,12 @@ int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entr
         return -1;
 
     for(cluster = fat_dir_entry_get_cluster(entry);
-        pos >= bytes_per_cluster && cluster && ((cluster & 0x0FFFFFF8) != 0x0FFFFFF8);
-        cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
+        pos >= bytes_per_cluster && cluster && !fat_cluster_is_eoc(fat_ctx, cluster);
+        cluster = fat_next_cluster(fat_ctx, cluster)) {
             pos -= bytes_per_cluster;
     }
 
-    if ((cluster & 0x0FFFFFF8) == 0x0FFFFFF8)
+    if (fat_cluster_is_eoc(fat_ctx, cluster))
         return -1;
 
     return cluster;
@@ -160,7 +170,7 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
         len -= read_len;
         pos += read_len;
         if (skip + read_len >= bytes_per_cluster)
-            current_cluster = fat_ctx->fat[current_cluster] & 0x0FFFFFFF;
+            current_cluster = fat_next_cluster(fat_ctx, current_cluster);
     }
     return ptr - (uint8_t *)buf;
 }
@@ -201,7 +211,7 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
         len -= read_len;
         file_ctx->current_pos += read_len;
         if (skip + read_len >= bytes_per_cluster)
-            file_ctx->current_cluster = fat_ctx->fat[file_ctx->current_cluster] & 0x0FFFFFFF;
+            file_ctx->current_cluster = fat_next_cluster(fat_ctx, file_ctx->current_cluster);
     }
     return ptr - (uint8_t *)buf;
 }
@@ -243,8 +253,8 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
     int32_t cluster, num_clusters = 0;
 
     for(cluster = ctx->first_cluster;
-        cluster && ((cluster & 0x0FFFFFF8) != 0x0FFFFFF8);
-        cluster = fat_ctx->fat[cluster] & 0x0FFFFFFF) {
+        cluster && !fat_cluster_is_eoc(fat_ctx, cluster);
+        cluster = fat_next_cluster(fat_ctx, file_ctx->current_cluster)) {
             num_clusters++;
     }
     ssize_t dir_size = num_clusters * bytes_per_cluster;
