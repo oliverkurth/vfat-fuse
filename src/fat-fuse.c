@@ -118,7 +118,6 @@ static int fatfuse_getattr(const char *path, struct stat *stbuf,
     int rc = 0;
     struct stat st;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
-    struct fat_context *fat_ctx = data->fat_ctx;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
     struct fat_dir_entry *entry = NULL;
 
@@ -168,10 +167,9 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                            off_t offset, struct fuse_file_info *fi,
                            enum fuse_readdir_flags flags)
 {
-	(void) fi;
+    (void) fi;
     int rc = 0;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
-    struct fat_context *fat_ctx = data->fat_ctx;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
     struct fat_dir_context *dir_ctx;
     int i;
@@ -187,11 +185,10 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         goto error;
     }
 
-    if (!dir_ctx->entries)
-        fat_dir_read(dir_ctx);
+    if (!dir_ctx->entries) fat_dir_read(dir_ctx);
 
-	filler(buf, ".", NULL, 0, 0);
-	filler(buf, "..", NULL, 0, 0);
+    filler(buf, ".", NULL, 0, 0);
+    filler(buf, "..", NULL, 0, 0);
 
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &dir_ctx->entries[i];

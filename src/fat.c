@@ -202,8 +202,11 @@ void free_fat_dir_context(struct fat_dir_context *ctx)
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
 {
     struct fat_dir_context *ctx = calloc(sizeof(struct fat_dir_context), 1);
+
     ctx->fat_ctx = fat_ctx;
     ctx->first_cluster = first_cluster;
+
+    return ctx;
 }
 
 ssize_t fat_dir_read(struct fat_dir_context *ctx)
@@ -238,12 +241,12 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
     }
 
     free_fat_file_context(file_ctx);
+    return rd;
 }
 
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
 {
     int date = 0, time = 0;
-    int tenths = 0;
 
     if (type == FAT_DATE_WRITE) {
         date = entry->write_date;
@@ -251,7 +254,6 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
     } else if (type == FAT_DATE_CREATION) {
         date = entry->creation_date;
         time = entry->creation_time;
-        tenths = entry->creation_time_tenth;
     } else if (type == FAT_DATE_ACCESS) {
         date = entry->last_access_date;
         time = 0;
@@ -265,7 +267,7 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
     int minute = (time >> 5) & 0x3f;
     int second = (time & 0x3f) * 2;
 
-    snprintf(buf, buf_size, "%4d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, hour);
+    snprintf(buf, buf_size, "%4d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second);
 
     return buf;
 }
@@ -359,6 +361,7 @@ wchar_t *str_to_wstr(const char *str, wchar_t *wbuf)
     ssize_t wlen = mbsrtowcs(wbuf, &str_ptr, len+1, NULL);
     if (wlen == len)
         return wbuf;
+    return NULL;
 }
 
 char *wstr_to_str(const wchar_t *wstr, char *buf)
@@ -368,6 +371,7 @@ char *wstr_to_str(const wchar_t *wstr, char *buf)
     ssize_t len = wcsrtombs(buf, &wstr_ptr, wlen+1, NULL);
     if (wlen == len)
         return buf;
+    return NULL;
 }
 
 bool fat_name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry, const char *name)
@@ -396,7 +400,6 @@ char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *
     if (fat_file_lfn(ctx, entry, lfn, sizeof(lfn))) {
         wstr_to_str(lfn, buf);
     } else {
-        char sfn_pretty[12];
         fat_file_sfn_pretty(entry, buf);
     }
     return buf;

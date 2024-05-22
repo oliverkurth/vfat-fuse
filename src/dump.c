@@ -169,9 +169,8 @@ void print_attr(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 int main(int argc, char *argv[])
 {
     int fd;
-    char *op, *filename, *path;
+    char *op, *filename;
     struct fat_context *fat_ctx;
-    int i;
 
     if (argc <= 1) {
         fprintf(stderr, "no operation given\n");
