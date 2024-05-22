@@ -84,6 +84,9 @@ struct fat_lfn_entry {
 };
 #pragma pack(pop)
 
+#define FAT_TYPE12 1
+#define FAT_TYPE16 2
+#define FAT_TYPE32 3
 
 #define FAT_ATTR_READ_ONLY 0x01
 #define FAT_ATTR_HIDDEN 0x02
@@ -107,6 +110,7 @@ struct fat_context {
        struct fat_boot_sector_ext32 ext32;
     } bootsector_ext;
 
+    int type;
     int fd;
 
     int32_t *fat;

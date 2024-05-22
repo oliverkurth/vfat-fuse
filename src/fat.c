@@ -27,26 +27,40 @@ struct fat_context *init_fat_context(int fd)
 
     rc = read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
     if (rc != sizeof(ctx->bootsector_ext))
-        return NULL;
-
-    int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
-    int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
-
-    ctx->fat = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
-
-    rc = pread(fd, ctx->fat,
-               ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
-               fat_start_sector * ctx->bootsector.bytes_per_sector);
-
-    if (rc != ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector)
         goto error;
 
-    ctx->data_start_sector = fat_start_sector + fat_sectors;
+    int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
+    if (ctx->bootsector.total_sectors16 == 0) {
+        /* FAT32 */
+        int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
+
+        ctx->fat = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
+
+        rc = pread(fd, ctx->fat,
+                   ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
+                   fat_start_sector * ctx->bootsector.bytes_per_sector);
+
+        if (rc != ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector)
+            goto error;
+
+        ctx->data_start_sector = fat_start_sector + fat_sectors;
+
+        ctx->type = FAT_TYPE32;
+    } else {
+        /* FAT16 or FAT12 */
+        fprintf(stderr, "only type FAT32 is supported so far\n");
+        goto error;
+    }
+
     ctx->fd = fd;
 
     return ctx;
 error:
-    free(ctx);
+    if (ctx) {
+        if (ctx->fd > 0)
+            close(ctx->fd);
+        free_fat_context(ctx);
+    }
     return NULL;
 }
 
