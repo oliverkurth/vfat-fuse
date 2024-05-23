@@ -92,12 +92,22 @@ void dump_info(struct fat_context *fat_ctx)
 {
     dump_boot_sector(&fat_ctx->bootsector);
 
-    printf("type is %s\n", fat_ctx->type == FAT_TYPE32 ? "FAT32" : "FAT16/12");
+    printf("\ntype is %s\n\n", fat_ctx->type == FAT_TYPE32 ? "FAT32" : "FAT16/12");
 
     if (fat_ctx->type == FAT_TYPE32)
         dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);
     else
         dump_boot_sector_ext16(&fat_ctx->bootsector_ext.ext16);
+    printf("\n");
+
+    printf("data start sector: %ld (pos = %ld/0x%lx)\n",
+        fat_ctx->data_start_sector,
+        fat_ctx->data_start_sector * fat_ctx->bootsector.bytes_per_sector,
+        fat_ctx->data_start_sector * fat_ctx->bootsector.bytes_per_sector);
+    printf("root dir sector: %ld (pos = %ld/0x%lx)\n",
+        fat_ctx->rootdir16_sector,
+        fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector,
+        fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector);
 }
 
 void dump_dir_entry(struct fat_dir_entry *entry)
@@ -121,6 +131,7 @@ void dump_dir_entry(struct fat_dir_entry *entry)
         printf("write_time = %d\n", (int)entry->write_time);
         printf("write_date = %d\n", (int)entry->write_date);
         printf("filesize = %d\n", (int)entry->filesize);
+        printf("\n");
     }  
 }
 
@@ -223,6 +234,9 @@ int main(int argc, char *argv[])
 
     if (strcmp(op, "info") == 0) {
         dump_info(fat_ctx);
+    } else if (strcmp(op, "rootdir") == 0) {
+        struct fat_dir_context *dir_ctx_root = init_fat_dir_context_root(fat_ctx);
+        dump_dir(dir_ctx_root->entries);
     } else if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0 || strcmp(op, "attr") == 0){
         if (argc <= 3) {
             fprintf(stderr, "no path file given for %s\n", op);
@@ -241,8 +255,7 @@ int main(int argc, char *argv[])
 
         printf("base_name=%s, dir_name=%s\n", base_name, dir_name);
 
-        struct fat_dir_context *dir_ctx_root = init_fat_dir_context(fat_ctx, fat_ctx->bootsector_ext.ext32.root_cluster);
-        fat_dir_read(dir_ctx_root);
+        struct fat_dir_context *dir_ctx_root = init_fat_dir_context_root(fat_ctx);
 
         if (strcmp(base_name, ".") == 0 && strcmp(op, "list") == 0) {
             list_dir(dir_ctx_root);

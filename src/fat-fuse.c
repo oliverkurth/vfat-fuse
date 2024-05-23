@@ -64,13 +64,11 @@ int fatfuse_init(struct fatfuse_data *data)
         return 1;
     }
 
-    data->dir_ctx_root = init_fat_dir_context(data->fat_ctx, data->fat_ctx->bootsector_ext.ext32.root_cluster);
+    data->dir_ctx_root = init_fat_dir_context_root(data->fat_ctx);
     if (data->dir_ctx_root == NULL) {
         fprintf(stderr, "could not initialize root dir context");
         return 1;
     }
-
-    fat_dir_read(data->dir_ctx_root);
 
     return 0;
 }

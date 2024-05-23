@@ -59,11 +59,10 @@ struct fat_context *init_fat_context(int fd)
         if (rc != ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector)
             goto error;
 
-        ctx->data_start_sector = fat_start_sector + fat_sectors;
-
+        ctx->rootdir16_sector = fat_start_sector + fat_sectors;
+        ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
         ctx->type = FAT_TYPE16;
     }
-
     ctx->fd = fd;
 
     return ctx;
@@ -113,14 +112,28 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry)
     return ((uint32_t)entry->first_cluster_high << 16) + (uint32_t)entry->first_cluster_low;
 }
 
+uint32_t fat_first_cluster(struct fat_context *fat_ctx)
+{
+    if (fat_ctx->type == FAT_TYPE32)
+        return fat_ctx->bootsector_ext.ext32.root_cluster;
+    else
+        return 0;
+}
+
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
-    return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
+    if (fat_ctx->type == FAT_TYPE32)
+        return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
+    else
+        return fat_ctx->fat16[cluster] & 0xFFFF;
 }
 
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)
 {
-    return (cluster & 0x0FFFFFF8) == 0x0FFFFFF8;
+    if (fat_ctx->type == FAT_TYPE32)
+        return (cluster & 0x0FFFFFF8) == 0x0FFFFFF8;
+    else
+        return (cluster & 0xFFF8) == 0xFFF8;
 }
 
 int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entry, off_t pos)
@@ -249,14 +262,26 @@ void free_fat_dir_context(struct fat_dir_context *ctx)
     }
 }
 
-struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+ssize_t fat_dir_read_root16(struct fat_dir_context *ctx)
 {
-    struct fat_dir_context *ctx = calloc(sizeof(struct fat_dir_context), 1);
+    struct fat_context *fat_ctx = ctx->fat_ctx;
+    struct fat_boot_sector *bs = &fat_ctx->bootsector;
+    ssize_t dir_size = bs->root_entry_count * 32;
+    off_t pos = fat_ctx->rootdir16_sector * bs->bytes_per_sector;
 
-    ctx->fat_ctx = fat_ctx;
-    ctx->first_cluster = first_cluster;
+    if (ctx->entries)
+        free(ctx->entries);
+    ctx->entries = malloc(dir_size);
 
-    return ctx;
+    ctx->num_entries = dir_size / sizeof(struct fat_dir_entry);
+
+    if (ctx->sub_dirs)
+        free(ctx->sub_dirs);
+    ctx->sub_dirs = calloc(ctx->num_entries, sizeof(struct fat_dir_context *));
+
+    ssize_t rd = pread(fat_ctx->fd, (void *)ctx->entries, dir_size, pos);
+
+    return rd;
 }
 
 ssize_t fat_dir_read(struct fat_dir_context *ctx)
@@ -292,6 +317,39 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
 
     free_fat_file_context(file_ctx);
     return rd;
+}
+
+static
+struct fat_dir_context *_init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+{
+    struct fat_dir_context *ctx = calloc(sizeof(struct fat_dir_context), 1);
+
+    ctx->fat_ctx = fat_ctx;
+    ctx->first_cluster = first_cluster;
+    return ctx;
+}
+
+struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+{
+    struct fat_dir_context *ctx = _init_fat_dir_context(fat_ctx, first_cluster);
+
+    fat_dir_read(ctx);
+
+    return ctx;
+}
+
+struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx)
+{
+    struct fat_dir_context *ctx;
+
+    if (fat_ctx->type == FAT_TYPE32) {
+        ctx = _init_fat_dir_context(fat_ctx, fat_first_cluster(fat_ctx));
+        fat_dir_read(ctx);
+    } else {
+        ctx = _init_fat_dir_context(fat_ctx, 0);
+        fat_dir_read_root16(ctx);
+    }
+    return ctx;
 }
 
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
@@ -524,7 +582,6 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
         if (ctx->sub_dirs[index] == NULL) {
             struct fat_dir_entry *entry = &ctx->entries[index];
             ctx->sub_dirs[index] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
-            fat_dir_read(ctx->sub_dirs[index]);
         }
         return ctx->sub_dirs[index];
     }

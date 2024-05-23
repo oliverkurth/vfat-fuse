@@ -116,6 +116,7 @@ struct fat_context {
     int32_t *fat32;
     int16_t *fat16;
 
+    int64_t rootdir16_sector;
     int64_t data_start_sector;
 };
 
@@ -137,6 +138,10 @@ struct fat_file_context {
 struct fat_context *init_fat_context(int fd);
 void free_fat_context(struct fat_context *ctx);
 
+uint32_t fat_first_cluster(struct fat_context *fat_ctx);
+uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
+bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster);
+
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 void free_fat_file_context(struct fat_file_context *ctx);
 
@@ -147,6 +152,7 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len);
 ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len);
 
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster);
+struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx);
 void free_fat_dir_context(struct fat_dir_context *ctx);
 ssize_t fat_dir_read(struct fat_dir_context *ctx);
 
