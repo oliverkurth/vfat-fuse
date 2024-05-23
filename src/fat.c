@@ -175,7 +175,7 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
         return -1;
 
     while ((len > 0) && (current_cluster > 0)) {
-        int64_t sector = fat_ctx->data_start_sector + (current_cluster - 2) * fat_ctx->bootsector.sectors_per_cluster; /* sector of current cluster */
+        int64_t sector = fat_get_sector_from_cluster(fat_ctx, current_cluster);
         uint32_t skip = pos & (bytes_per_cluster - 1);
 
         uint32_t read_len = bytes_per_cluster - skip;
@@ -216,7 +216,7 @@ ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
     }
 
     while ((len > 0) && (file_ctx->current_cluster > 0)) {
-        int64_t sector = fat_ctx->data_start_sector + (file_ctx->current_cluster - 2) * fat_ctx->bootsector.sectors_per_cluster; /* sector of current cluster */
+        int64_t sector = fat_get_sector_from_cluster(fat_ctx, file_ctx->current_cluster); /* sector of current cluster */
         uint32_t skip = file_ctx->current_pos & (bytes_per_cluster - 1);
 
         uint32_t read_len = bytes_per_cluster - skip;
