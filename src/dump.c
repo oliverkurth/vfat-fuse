@@ -167,7 +167,7 @@ void list_dir(struct fat_dir_context *dir_ctx)
         fat_dir_read(dir_ctx);
 
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
-        if (dir_ctx->entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
+        if (fat_entry_is_valid(&dir_ctx->entries[i])) {
             print_dir_entry(dir_ctx, &dir_ctx->entries[i]);
         }
     }

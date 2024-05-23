@@ -513,6 +513,11 @@ char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *
     return buf;
 }
 
+bool fat_entry_is_valid(struct fat_dir_entry *entry)
+{
+    return (entry->name[0] != 0) && (entry->attr != FAT_ATTR_LONG_FILE_NAME) && (entry->name[0] != 0xe5);
+}
+
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path)
 {
     char path_copy[strlen(path)+1];
@@ -531,7 +536,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
     int i;
     for (i = 0; ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
-        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+        if (fat_entry_is_valid(entry)) {
             if (fat_name_matches_entry(ctx, entry, path_copy)) {
                 if (entry->attr & FAT_ATTR_DIRECTORY) {
                     if (ctx->sub_dirs[i] == NULL) {
@@ -559,7 +564,7 @@ int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char *name)
     int i;
     for (i = 0; ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
-        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+        if (fat_entry_is_valid(entry)) {
             if (fat_name_matches_entry(ctx, entry, name))
                 return i;
         }

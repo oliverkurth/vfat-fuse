@@ -164,6 +164,7 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
 
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path);
 
+bool fat_entry_is_valid(struct fat_dir_entry *entry);
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
 wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);

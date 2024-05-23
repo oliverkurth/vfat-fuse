@@ -192,7 +192,7 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &dir_ctx->entries[i];
-        if (entry->attr != FAT_ATTR_LONG_FILE_NAME) {
+        if (fat_entry_is_valid(entry)) {
             char name[256];
             fat_dir_get_entry_name(dir_ctx, entry, name);
             if (filler(buf, name, NULL, 0, 0)) {
