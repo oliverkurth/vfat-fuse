@@ -156,26 +156,13 @@ int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entr
     return cluster;
 }
 
-ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len)
+ssize_t fat_file_pread_from_cluster(struct fat_context *fat_ctx, int32_t cluster, void *buf, off_t pos, size_t len)
 {
-    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
     uint8_t *ptr = (uint8_t *)buf;
-    int32_t current_cluster;
+    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
 
-    if (entry->filesize > 0) {
-        /* do not read beyond end of file */
-        if ((pos + len) > entry->filesize) {
-            len = entry->filesize - pos;
-        }
-    }
-
-    current_cluster = fat_find_cluster(fat_ctx, entry, pos);
-
-    if (current_cluster < 0)
-        return -1;
-
-    while ((len > 0) && (current_cluster > 0)) {
-        int64_t sector = fat_get_sector_from_cluster(fat_ctx, current_cluster);
+    while ((len > 0) && (cluster > 0) && !fat_cluster_is_eoc(fat_ctx, cluster)) {
+        int64_t sector = fat_get_sector_from_cluster(fat_ctx, cluster);
         uint32_t skip = pos & (bytes_per_cluster - 1);
 
         uint32_t read_len = bytes_per_cluster - skip;
@@ -197,50 +184,28 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
         len -= read_len;
         pos += read_len;
         if (skip + read_len >= bytes_per_cluster)
-            current_cluster = fat_next_cluster(fat_ctx, current_cluster);
+            cluster = fat_next_cluster(fat_ctx, cluster);
     }
     return ptr - (uint8_t *)buf;
 }
 
-ssize_t fat_file_read(struct fat_file_context *file_ctx, void *buf, size_t len)
+ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len)
 {
-    struct fat_context *fat_ctx = file_ctx->fat_ctx;
-    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
-    uint8_t *ptr = (uint8_t *)buf;
+    int32_t cluster;
 
-    if (file_ctx->size > 0) {
+    if (!(entry->attr & FAT_ATTR_DIRECTORY) && (entry->filesize > 0)) {
         /* do not read beyond end of file */
-        if ((file_ctx->current_pos + len) > file_ctx->size) {
-            len = file_ctx->size - file_ctx->current_pos;
+        if ((pos + len) > entry->filesize) {
+            len = entry->filesize - pos;
         }
     }
 
-    while ((len > 0) && (file_ctx->current_cluster > 0)) {
-        int64_t sector = fat_get_sector_from_cluster(fat_ctx, file_ctx->current_cluster); /* sector of current cluster */
-        uint32_t skip = file_ctx->current_pos & (bytes_per_cluster - 1);
+    cluster = fat_find_cluster(fat_ctx, entry, pos);
 
-        uint32_t read_len = bytes_per_cluster - skip;
-        if (len < read_len)
-            read_len = len;
+    if (cluster < 0)
+        return -1;
 
-        off_t p = (sector * fat_ctx->bootsector.bytes_per_sector) + skip;
-
-        ssize_t rd = pread(fat_ctx->fd, ptr, read_len, p);
-        if (rd < 0) {
-            fprintf(stderr, "pread failed: %s\n", strerror(errno));
-            return rd;
-        }
-        if (rd < read_len) {
-            fprintf(stderr, "short pread (%d < %d), p=%d: %s\n", (int)rd, read_len, (int)p, strerror(errno));
-            return -1;
-        }
-        ptr += read_len;
-        len -= read_len;
-        file_ctx->current_pos += read_len;
-        if (skip + read_len >= bytes_per_cluster)
-            file_ctx->current_cluster = fat_next_cluster(fat_ctx, file_ctx->current_cluster);
-    }
-    return ptr - (uint8_t *)buf;
+    return fat_file_pread_from_cluster(fat_ctx, cluster, buf, pos, len);
 }
 
 void free_fat_dir_context(struct fat_dir_context *ctx)
@@ -288,12 +253,11 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
 {
     struct fat_context *fat_ctx = ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
-    struct fat_file_context *file_ctx = init_fat_file_context(ctx->fat_ctx, ctx->first_cluster, 0);
     int32_t cluster, num_clusters = 0;
 
     for(cluster = ctx->first_cluster;
         cluster && !fat_cluster_is_eoc(fat_ctx, cluster);
-        cluster = fat_next_cluster(fat_ctx, file_ctx->current_cluster)) {
+        cluster = fat_next_cluster(fat_ctx, cluster)) {
             num_clusters++;
     }
     ssize_t dir_size = num_clusters * bytes_per_cluster;
@@ -308,14 +272,13 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
         free(ctx->sub_dirs);
     ctx->sub_dirs = calloc(ctx->num_entries, sizeof(struct fat_dir_context *));
 
-    ssize_t rd = fat_file_read(file_ctx, (void *)ctx->entries, dir_size);
+    ssize_t rd = fat_file_pread_from_cluster(fat_ctx, ctx->first_cluster, (void *)ctx->entries, 0, dir_size);
     if (rd < dir_size) {
-        fprintf(stderr, "fat_file_read failed: %s\n", strerror(errno));
+        fprintf(stderr, "fat_file_pread_from_cluster failed: %s\n", strerror(errno));
         free(ctx->entries);
         return rd;
     }
 
-    free_fat_file_context(file_ctx);
     return rd;
 }
 

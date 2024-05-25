@@ -253,8 +253,6 @@ int main(int argc, char *argv[])
         char *base_name = basename(path_copy);
         char *dir_name = dirname(path_copy1);
 
-        printf("base_name=%s, dir_name=%s\n", base_name, dir_name);
-
         struct fat_dir_context *dir_ctx_root = init_fat_dir_context_root(fat_ctx);
 
         if (strcmp(base_name, ".") == 0 && strcmp(op, "list") == 0) {
@@ -282,10 +280,12 @@ int main(int argc, char *argv[])
                         struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
                         int rd;
                         char buf[333];
-                        while ((rd = fat_file_read(file_ctx, buf, sizeof(buf))) > 0) {
+                        off_t pos = 0;
+                        while ((rd = fat_file_pread(fat_ctx, entry, buf, pos, sizeof(buf))) > 0) {
                             if (write(1, buf, rd) != rd) {
-                                fprintf(stderr, "failed to write t stdout: %s (%d)", strerror(errno), errno);
+                                fprintf(stderr, "failed to write to stdout: %s (%d)", strerror(errno), errno);
                             }
+                            pos += rd;
                         }
                         free_fat_file_context(file_ctx);
                     } else if (strcmp(op, "attr") == 0) {
