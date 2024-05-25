@@ -208,6 +208,40 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
     return fat_file_pread_from_cluster(fat_ctx, cluster, buf, pos, len);
 }
 
+/* clusters need to be allocated already */
+ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, void *buf, off_t pos, size_t len)
+{
+    uint8_t *ptr = (uint8_t *)buf;
+    uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+
+    while ((len > 0) && (cluster > 0) && !fat_cluster_is_eoc(fat_ctx, cluster)) {
+        int64_t sector = fat_get_sector_from_cluster(fat_ctx, cluster);
+        uint32_t skip = pos & (bytes_per_cluster - 1);
+
+        uint32_t write_len = bytes_per_cluster - skip;
+        if (len < write_len)
+            write_len = len;
+
+        off_t p = (sector * fat_ctx->bootsector.bytes_per_sector) + skip;
+
+        ssize_t wr = pwrite(fat_ctx->fd, ptr, write_len, p);
+        if (wr < 0) {
+            fprintf(stderr, "pwrite failed: %s\n", strerror(errno));
+            return wr;
+        }
+        if (wr < write_len) {
+            fprintf(stderr, "short pwrite (%d < %d), p=%d: %s\n", (int)wr, write_len, (int)p, strerror(errno));
+            return -1;
+        }
+        ptr += write_len;
+        len -= write_len;
+        pos += write_len;
+        if (skip + write_len >= bytes_per_cluster)
+            cluster = fat_next_cluster(fat_ctx, cluster);
+    }
+    return ptr - (uint8_t *)buf;
+}
+
 void free_fat_dir_context(struct fat_dir_context *ctx)
 {
     if (ctx) {
