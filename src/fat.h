@@ -173,3 +173,5 @@ time_t fat_time(struct fat_dir_entry *entry, int type);
 wchar_t *str_to_wstr(const char *str, wchar_t *wbuf);
 char *wstr_to_str(const wchar_t *wstr, char *buf);
 char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *entry, char *buf);
+
+void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index);

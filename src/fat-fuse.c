@@ -52,7 +52,7 @@ struct fatfuse_data {
 
 int fatfuse_init(struct fatfuse_data *data)
 {
-    data->fd = open(data->file_path, O_RDONLY);
+    data->fd = open(data->file_path, O_RDWR);
     if (data->fd < 0) {
         fprintf(stderr, "could not open %s: %s (%d)", data->file_path, strerror(errno), errno);
         return 1;
@@ -85,6 +85,16 @@ void fatfuse_deinit(struct fatfuse_data *data)
         free(data->file_path);
     if (data->options.file_path)
         free(data->options.file_path);
+}
+
+static
+struct fat_dir_context *_fatfuse_find_dir_context(struct fat_dir_context *dir_ctx_root, const char *path)
+{
+    char path_copy[strlen(path) + 1];
+
+    strcpy(path_copy, path + 1);
+
+    return fat_dir_context_by_path(dir_ctx_root, dirname(path_copy));
 }
 
 static
@@ -234,6 +244,32 @@ static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
 	return rd;
 }
 
+static int fatfuse_unlink(const char *path)
+{
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0)
+        return -ENOENT;
+
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+
+    if (entry->attr & FAT_ATTR_DIRECTORY)
+        return -EISDIR;
+
+    far_dir_entry_delete(dir_ctx, index);
+
+    return 0;
+}
+
 static
 int fatfuse_opt_proc(void *data, const char *arg,
 			         int key, struct fuse_args *outargs)
@@ -257,6 +293,7 @@ static const struct fuse_operations fatfuse_oper = {
     .readdir	= fatfuse_readdir,
     .open       = fatfuse_open,
     .read       = fatfuse_read,
+    .unlink     = fatfuse_unlink,
 };
 
 int main(int argc, char *argv[])
