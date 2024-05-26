@@ -160,6 +160,7 @@ uint32_t fat_dir_entry_get_cluster(struct fat_dir_entry *entry);
     
 int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char * name);
 struct fat_dir_entry *fat_dir_find_entry(struct fat_dir_context *ctx, const char *name);
+struct fat_dir_context *fat_dir_get_dir_context(struct fat_dir_context *ctx, int index);
 struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, const char *name);
 
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path);
@@ -174,4 +175,5 @@ wchar_t *str_to_wstr(const char *str, wchar_t *wbuf);
 char *wstr_to_str(const wchar_t *wstr, char *buf);
 char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *entry, char *buf);
 
+bool fat_dir_is_empty(struct fat_dir_context *dir_ctx);
 void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index);

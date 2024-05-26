@@ -270,6 +270,36 @@ static int fatfuse_unlink(const char *path)
     return 0;
 }
 
+static int fatfuse_rmdir(const char *path)
+{
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0)
+        return -ENOENT;
+
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+
+    if (!(entry->attr & FAT_ATTR_DIRECTORY))
+        return -ENOTDIR;
+
+    struct fat_dir_context *subdir_ctx = fat_dir_get_dir_context(dir_ctx, index);
+    if (!fat_dir_is_empty(subdir_ctx))
+        return -ENOTEMPTY;
+
+    far_dir_entry_delete(dir_ctx, index);
+
+    return 0;
+}
+
 static
 int fatfuse_opt_proc(void *data, const char *arg,
 			         int key, struct fuse_args *outargs)
@@ -294,6 +324,7 @@ static const struct fuse_operations fatfuse_oper = {
     .open       = fatfuse_open,
     .read       = fatfuse_read,
     .unlink     = fatfuse_unlink,
+    .rmdir      = fatfuse_rmdir,
 };
 
 int main(int argc, char *argv[])

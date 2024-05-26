@@ -607,9 +607,8 @@ struct fat_dir_entry *fat_dir_find_entry(struct fat_dir_context *ctx, const char
     return NULL;
 }
 
-struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, const char *name)
+struct fat_dir_context *fat_dir_get_dir_context(struct fat_dir_context *ctx, int index)
 {
-    int index = fat_dir_find_entry_index(ctx, name);
     if (index >= 0) {
         if (ctx->sub_dirs[index] == NULL) {
             struct fat_dir_entry *entry = &ctx->entries[index];
@@ -618,6 +617,27 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
         return ctx->sub_dirs[index];
     }
     return NULL;
+}
+
+struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, const char *name)
+{
+    int index = fat_dir_find_entry_index(ctx, name);
+    return fat_dir_get_dir_context(ctx, index);
+}
+
+bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
+{
+    int i;
+    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+        if (fat_entry_is_valid(&dir_ctx->entries[i])) {
+            char sfn[13];
+            fat_file_sfn_pretty(&dir_ctx->entries[i], sfn);
+            if (strcmp(sfn, ".") == 0 || strcmp(sfn, "..") == 0)
+                continue;
+            return false;
+        }
+    }
+    return true;
 }
 
 void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
