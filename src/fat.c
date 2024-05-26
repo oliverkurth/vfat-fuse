@@ -437,6 +437,20 @@ const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
     return buf;
 }
 
+void fat_time_to_fat(__le16 *pdate, __le16 *ptime)
+{
+    time_t now;
+    struct tm *tm;
+
+    time (&now);
+    tm = localtime(&now);
+
+    if (pdate)
+        *pdate = (tm->tm_year - 80) << 9 | ((tm->tm_mon + 1) << 5) | tm->tm_mday;
+    if (ptime)
+        *ptime = (tm->tm_hour << 11) | (tm->tm_min << 5) | (tm->tm_sec >> 1);
+}
+
 static
 uint8_t _lfn_checksum (const char *sfn)
 {
@@ -660,4 +674,58 @@ void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
     fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
                                (void *)entry,
                                index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+}
+
+/* convert a filename to a SFN entry. Does not NUL terminate */
+static char *_str_to_sfn(const char *name, char *buf)
+{
+    char *p;
+    const char *q = name;
+
+    p = buf;
+    while (*q && *q != '.')
+        if (p - buf < 8)
+            *p++ = toupper(*q++);
+        else
+            q++;
+    if (*q == '.') {
+        while(p - buf < 8)
+            *p++ = ' ';
+        q++;
+        while(p - buf < 11)
+            *p++ = toupper(*q++);
+    }
+    while(p - buf < 11)
+        *p++ = ' ';
+
+    return buf;
+}
+
+int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr)
+{
+    int i;
+
+    for (i = 0; dir_ctx->entries[i].name[0] && i < dir_ctx->num_entries; i++)
+        if (dir_ctx->entries[i].name[0] == 0xe5)
+            break;
+
+    if (i >= dir_ctx->num_entries)
+        /* TODO: need to allocate new cluster for entries */
+        return -1;
+
+    struct fat_dir_entry *entry = &dir_ctx->entries[i];
+    memset((void *)entry, 0, sizeof(struct fat_dir_entry));
+    _str_to_sfn(name, entry->name);
+    entry->attr = attr;
+    entry->ntres = 0;
+
+    fat_time_to_fat(&entry->creation_date, &entry->creation_time);
+    entry->write_time = entry->creation_time;
+    entry->write_date = entry->creation_date;
+
+    fat_file_pwrite_to_cluster(dir_ctx->fat_ctx, dir_ctx->first_cluster,
+                               (void *)entry,
+                               i * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+
+    return i;
 }
