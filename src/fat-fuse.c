@@ -324,6 +324,42 @@ static int fatfuse_create(const char *path, mode_t mode,
     return 0;
 }
 
+static int fatfuse_utimens(const char *path, const struct timespec tv[2],
+		                   struct fuse_file_info *fi)
+{
+	(void) fi;
+
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0)
+        return -ENOENT;
+
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+
+    if (tv != NULL) {
+        fat_time_to_fat(tv[0].tv_sec, &entry->last_access_date, NULL);
+        fat_time_to_fat(tv[1].tv_sec, &entry->write_date, &entry->write_time);
+    } else {
+        fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
+        entry->last_access_date = entry->write_date;
+    }
+
+    fat_file_pwrite_to_cluster(dir_ctx->fat_ctx, dir_ctx->first_cluster,
+                               (void *)entry,
+                               index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+
+	return 0;
+}
+
 static
 int fatfuse_opt_proc(void *data, const char *arg,
 			         int key, struct fuse_args *outargs)
@@ -350,6 +386,7 @@ static const struct fuse_operations fatfuse_oper = {
     .unlink     = fatfuse_unlink,
     .rmdir      = fatfuse_rmdir,
     .create     = fatfuse_create,
+    .utimens    = fatfuse_utimens,
 };
 
 int main(int argc, char *argv[])

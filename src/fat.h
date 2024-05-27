@@ -170,6 +170,7 @@ const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
 wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);
 time_t fat_time(struct fat_dir_entry *entry, int type);
+void fat_time_to_fat(time_t t, __le16 *pdate, __le16 *ptime);
 
 wchar_t *str_to_wstr(const char *str, wchar_t *wbuf);
 char *wstr_to_str(const wchar_t *wstr, char *buf);

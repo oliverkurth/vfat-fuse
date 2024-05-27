@@ -437,13 +437,13 @@ const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
     return buf;
 }
 
-void fat_time_to_fat(__le16 *pdate, __le16 *ptime)
+void fat_time_to_fat(time_t t, __le16 *pdate, __le16 *ptime)
 {
-    time_t now;
     struct tm *tm;
 
-    time (&now);
-    tm = localtime(&now);
+    if (t == 0)
+        time(&t);
+    tm = localtime(&t);
 
     if (pdate)
         *pdate = (tm->tm_year - 80) << 9 | ((tm->tm_mon + 1) << 5) | tm->tm_mday;
@@ -719,7 +719,7 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
     entry->attr = attr;
     entry->ntres = 0;
 
-    fat_time_to_fat(&entry->creation_date, &entry->creation_time);
+    fat_time_to_fat((time_t)0, &entry->creation_date, &entry->creation_time);
     entry->write_time = entry->creation_time;
     entry->write_date = entry->creation_date;
 
