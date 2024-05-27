@@ -692,7 +692,7 @@ static char *_str_to_sfn(const char *name, char *buf)
         while(p - buf < 8)
             *p++ = ' ';
         q++;
-        while(p - buf < 11)
+        while(*q && (p - buf < 11))
             *p++ = toupper(*q++);
     }
     while(p - buf < 11)
