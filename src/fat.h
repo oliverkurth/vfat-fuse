@@ -118,6 +118,7 @@ struct fat_context {
 
     int64_t rootdir16_sector;
     int64_t data_start_sector;
+    int32_t num_clusters;
 };
 
 struct fat_dir_context {

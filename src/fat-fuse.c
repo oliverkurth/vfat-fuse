@@ -324,6 +324,29 @@ static int fatfuse_create(const char *path, mode_t mode,
     return 0;
 }
 
+static int fatfuse_mkdir(const char *path, mode_t mode)
+{
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index >= 0)
+        return -EEXIST;
+
+    index = fat_dir_create_entry(dir_ctx, basename(path_copy), FAT_ATTR_DIRECTORY);
+    if (index < 0)
+        return -ENOBUFS; /* good value? */
+
+    return 0;
+}
+
 static int fatfuse_utimens(const char *path, const struct timespec tv[2],
 		                   struct fuse_file_info *fi)
 {
@@ -386,6 +409,7 @@ static const struct fuse_operations fatfuse_oper = {
     .unlink     = fatfuse_unlink,
     .rmdir      = fatfuse_rmdir,
     .create     = fatfuse_create,
+    .mkdir      = fatfuse_mkdir,
     .utimens    = fatfuse_utimens,
 };
 

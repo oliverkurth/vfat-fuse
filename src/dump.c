@@ -132,7 +132,13 @@ void dump_dir_entry(struct fat_dir_entry *entry)
         printf("write_date = %d\n", (int)entry->write_date);
         printf("filesize = %d\n", (int)entry->filesize);
         printf("\n");
-    }  
+    } else {
+        struct fat_lfn_entry *lfn_entry = (struct fat_lfn_entry *)entry;
+        printf("lfn\n");
+        printf("seq_number = %x\n", lfn_entry->seq_number);
+        printf("attr = %x\n", lfn_entry->attr);
+        printf("\n");
+    }
 }
 
 void dump_dir(struct fat_dir_entry *entries)
@@ -140,9 +146,7 @@ void dump_dir(struct fat_dir_entry *entries)
     int i;
 
     for(i = 0; entries[i].name[0]; i++) {
-        if (entries[i].attr != FAT_ATTR_LONG_FILE_NAME) {
-            dump_dir_entry(&entries[i]);
-        }
+        dump_dir_entry(&entries[i]);
     }
 }
 
