@@ -122,7 +122,7 @@ struct fat_dir_entry *_fatfuse_find_entry_by_path(struct fat_dir_context *dir_ct
 static int fatfuse_getattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
-	(void) fi;
+    (void) fi;
     int rc = 0;
     struct stat st;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
@@ -217,18 +217,25 @@ error:
 
 static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 {
-    (void) path;
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
-		return -EACCES;
+    (void) fi;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+    struct fat_dir_entry *entry = NULL;
 
-	return 0;
+    entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
+
+    if (entry->attr & FAT_ATTR_READ_ONLY)
+        if ((fi->flags & O_ACCMODE) != O_RDONLY)
+            return -EACCES;
+
+    return 0;
 }
 
 static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
-		                struct fuse_file_info *fi)
+                        struct fuse_file_info *fi)
 {
-	int rd = 0;
-	(void) fi;
+    int rd = 0;
+    (void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_context *fat_ctx = data->fat_ctx;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
@@ -241,7 +248,7 @@ static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
         rd = -EIO;
     }
 
-	return rd;
+    return rd;
 }
 
 static int fatfuse_unlink(const char *path)
@@ -301,7 +308,7 @@ static int fatfuse_rmdir(const char *path)
 }
 
 static int fatfuse_create(const char *path, mode_t mode,
-		                  struct fuse_file_info *fi)
+                          struct fuse_file_info *fi)
 {
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
@@ -348,7 +355,7 @@ static int fatfuse_mkdir(const char *path, mode_t mode)
 }
 
 static int fatfuse_utimens(const char *path, const struct timespec tv[2],
-		                   struct fuse_file_info *fi)
+                           struct fuse_file_info *fi)
 {
 	(void) fi;
 
@@ -385,13 +392,13 @@ static int fatfuse_utimens(const char *path, const struct timespec tv[2],
 
 static
 int fatfuse_opt_proc(void *data, const char *arg,
-			         int key, struct fuse_args *outargs)
+                     int key, struct fuse_args *outargs)
 {
     (void) outargs;
     struct fatfuse_data *fatfuse_data = (struct fatfuse_data *)data;
 
-	switch (key) {
-	case FUSE_OPT_KEY_NONOPT:
+    switch (key) {
+    case FUSE_OPT_KEY_NONOPT:
         if (fatfuse_data->options.file_path == NULL) {
             fatfuse_data->options.file_path = strdup(arg);
             return 0;
@@ -415,8 +422,8 @@ static const struct fuse_operations fatfuse_oper = {
 
 int main(int argc, char *argv[])
 {
-	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-	struct stat stbuf;
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    struct stat stbuf;
     struct fatfuse_data data = {0};
     int argc_saved;
     char **argv_saved;
