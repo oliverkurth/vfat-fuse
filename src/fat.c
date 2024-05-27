@@ -693,6 +693,26 @@ bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
     return true;
 }
 
+void _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
+{
+    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
+
+    /* mark associated lfn entries as deleted before using this one */
+    if (dir_ctx->entries[index].name[0] == 0xe5) {
+        struct fat_lfn_entry *lfn_entry;
+        for(int j = index - 1; j > 0; j--) {
+            lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
+            if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
+                lfn_entry->seq_number = 0xe5;
+                fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
+                                       (void *)lfn_entry,
+                                       j * sizeof(struct fat_lfn_entry), sizeof(struct fat_lfn_entry));
+            } else
+                break;
+        }
+    }
+}
+
 void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
@@ -713,6 +733,8 @@ void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
     fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
                                (void *)entry,
                                index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+
+    _fat_dir_delete_lfn_entries(dir_ctx, index);
 }
 
 /* convert a filename to a SFN entry. Does not NUL terminate */
@@ -753,20 +775,7 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         /* TODO: need to allocate new cluster for entries */
         return -1;
 
-    /* mark associated lfn entries as deleted before using this one */
-    if (dir_ctx->entries[i].name[0] == 0xe5) {
-        struct fat_lfn_entry *lfn_entry;
-        for(int j = i - 1; j > 0; j--) {
-            lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
-            if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
-                lfn_entry->seq_number = 0xe5;
-                fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                                       (void *)lfn_entry,
-                                       j * sizeof(struct fat_lfn_entry), sizeof(struct fat_lfn_entry));
-            } else
-                break;
-        }
-    }
+    _fat_dir_delete_lfn_entries(dir_ctx, i);
 
     struct fat_dir_entry *entry = &dir_ctx->entries[i];
     memset((void *)entry, 0, sizeof(struct fat_dir_entry));
