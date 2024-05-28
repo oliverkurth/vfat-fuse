@@ -170,19 +170,25 @@ uint32_t fat_get_cluster_value(struct fat_context *fat_ctx, uint32_t cluster)
     return fat_ctx->fat16[cluster] & 0xFFFF;
 }
 
-/* TODO: write to backup FAT */
 int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
     int64_t fat_start_sector = fat_ctx->bootsector.reserved_sectors_count;
     off_t offset = fat_start_sector * fat_ctx->bootsector.bytes_per_sector;
-    ssize_t wr;
+    ssize_t wr = 0;
+    int i;
 
     if (fat_ctx->type == FAT_TYPE32) {
         offset += cluster * sizeof(uint32_t);
-        wr = pwrite(fat_ctx->fd, &fat_ctx->fat32[cluster], sizeof(uint32_t), offset);
+        for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
+            wr = pwrite(fat_ctx->fd, &fat_ctx->fat32[cluster], sizeof(uint32_t), offset);
+            offset += fat_ctx->bootsector_ext.ext32.fat_size * fat_ctx->bootsector.bytes_per_sector;
+        }
     } else{
         offset += cluster * sizeof(uint16_t);
-        wr = pwrite(fat_ctx->fd, &fat_ctx->fat16[cluster], sizeof(uint16_t), offset);
+        for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
+            wr = pwrite(fat_ctx->fd, &fat_ctx->fat16[cluster], sizeof(uint16_t), offset);
+            offset += fat_ctx->bootsector.fat_size16 * fat_ctx->bootsector.bytes_per_sector;
+        }
     }
     return wr;
 }
