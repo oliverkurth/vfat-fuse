@@ -927,9 +927,13 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         sub_entries[0].write_date = sub_entries[1].write_date = entry->write_date;
         sub_entries[0].write_time = sub_entries[1].write_time = entry->write_time;
 
+        entry->first_cluster_low = cluster & 0xffff;
+        entry->first_cluster_high = (cluster >> 16) & 0xffff;
+
         sub_entries[0].first_cluster_low = entry->first_cluster_low;
         sub_entries[0].first_cluster_high = entry->first_cluster_high;
 
+        /* TODO: if parent is root dir set first_cluster to 0 */
         sub_entries[1].first_cluster_low = dir_ctx->first_cluster & 0xffff;
         sub_entries[1].first_cluster_high = (dir_ctx->first_cluster >> 16) & 0xffff;
 
@@ -937,8 +941,6 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
                                    (void *)sub_entries,
                                    0, bytes_per_cluster);
 
-        entry->first_cluster_low = cluster & 0xffff;
-        entry->first_cluster_high = (cluster >> 16) & 0xffff;
         dir_ctx->sub_dirs[i] = newdir_ctx;
     }
 
