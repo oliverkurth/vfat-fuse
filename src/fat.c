@@ -46,6 +46,16 @@ struct fat_context *init_fat_context(int fd)
         ctx->data_start_sector = fat_start_sector + fat_sectors;
         ctx->num_clusters = ctx->bootsector.total_sectors32 / ctx->bootsector.sectors_per_cluster;
         ctx->type = FAT_TYPE32;
+
+        ctx->fs_info = malloc(sizeof(struct fat_fsinfo));
+
+        rc = pread(fd, ctx->fs_info,
+                   sizeof(struct fat_fsinfo),
+                   ctx->bootsector_ext.ext32.fs_info_sector * ctx->bootsector.bytes_per_sector);
+
+        if (rc != sizeof(struct fat_fsinfo))
+            goto error;
+
     } else {
         /* FAT16 or FAT12 */
         int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
@@ -83,6 +93,8 @@ void free_fat_context(struct fat_context *ctx)
             free(ctx->fat32);
         if (ctx->fat16)
             free(ctx->fat16);
+        if (ctx->fs_info)
+            free(ctx->fs_info);
         free(ctx);
     }
 }

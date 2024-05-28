@@ -84,6 +84,18 @@ struct fat_lfn_entry {
 };
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+struct fat_fsinfo {
+    __le32 lead_sig; /* 0x41615252 */
+    uint8_t reserved1[480];
+    __le32 struc_sig; /* 0x61417272 */
+    __le32 free_count;
+    __le32 next_free;
+    uint8_t reserved2[12];
+    __le32 trail_sig; /* 0xAA550000 */
+};
+#pragma pack(pop)
+
 #define FAT_TYPE12 1
 #define FAT_TYPE16 2
 #define FAT_TYPE32 3
@@ -109,6 +121,9 @@ struct fat_context {
        struct fat_boot_sector_ext16 ext16;
        struct fat_boot_sector_ext32 ext32;
     } bootsector_ext;
+
+    /* FAT32 only */
+    struct fat_fsinfo *fs_info;
 
     int type;
     int fd;
