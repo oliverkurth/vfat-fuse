@@ -138,6 +138,7 @@ struct fat_file_context {
 
 struct fat_context *init_fat_context(int fd);
 void free_fat_context(struct fat_context *ctx);
+int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
 
 uint32_t fat_first_cluster(struct fat_context *fat_ctx);
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
@@ -150,7 +151,8 @@ int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluste
 
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len);
-ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, void *buf, off_t pos, size_t len);
+ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, const void *buf, off_t pos, size_t len);
+ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *buf, off_t pos, size_t len);
 
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster);
 struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx);

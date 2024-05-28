@@ -92,7 +92,11 @@ void dump_info(struct fat_context *fat_ctx)
 {
     dump_boot_sector(&fat_ctx->bootsector);
 
-    printf("\ntype is %s\n\n", fat_ctx->type == FAT_TYPE32 ? "FAT32" : "FAT16/12");
+    printf("\ntype is %s\n", fat_ctx->type == FAT_TYPE32 ? "FAT32" : "FAT16/12");
+    printf("num_clusters = %d\n", fat_ctx->num_clusters);
+    printf("free clusters = %d\n", fat_free_cluster_count(fat_ctx));
+
+    printf("\n");
 
     if (fat_ctx->type == FAT_TYPE32)
         dump_boot_sector_ext32(&fat_ctx->bootsector_ext.ext32);

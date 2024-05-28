@@ -234,7 +234,7 @@ static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
                         struct fuse_file_info *fi)
 {
-    int rd = 0;
+    ssize_t rd = 0;
     (void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_context *fat_ctx = data->fat_ctx;
@@ -245,10 +245,35 @@ static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
     if (entry) {
         rd = fat_file_pread(fat_ctx, entry, buf, offset, size);
     } else {
-        rd = -EIO;
+        rd = -ENOENT;
     }
 
     return rd;
+}
+
+static int fatfuse_write(const char *path, const char *buf, size_t size, off_t offset,
+                         struct fuse_file_info *fi)
+{
+    ssize_t wr = 0;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0)
+        return -ENOENT;
+
+    wr = fat_file_pwrite(dir_ctx, index, buf, offset, size);
+    if (wr < 0)
+        return -errno;
+
+    return wr;
 }
 
 static int fatfuse_unlink(const char *path)
@@ -413,6 +438,7 @@ static const struct fuse_operations fatfuse_oper = {
     .readdir	= fatfuse_readdir,
     .open       = fatfuse_open,
     .read       = fatfuse_read,
+    .write      = fatfuse_write,
     .unlink     = fatfuse_unlink,
     .rmdir      = fatfuse_rmdir,
     .create     = fatfuse_create,
