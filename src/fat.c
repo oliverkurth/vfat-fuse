@@ -390,6 +390,7 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     int32_t cluster;
+    ssize_t wr;
 
     if (!(entry->attr & FAT_ATTR_DIRECTORY)) {
         /* extend file if needed */
@@ -406,7 +407,15 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
         return -1;
     }
 
-    return fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
+    wr = fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
+    if (wr > 0) {
+        /* update write time */
+        fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
+        fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
+                                   (void *)entry,
+                                   index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+    }
+    return wr;
 }
 
 void free_fat_dir_context(struct fat_dir_context *ctx)
