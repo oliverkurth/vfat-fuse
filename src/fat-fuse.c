@@ -197,8 +197,10 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     if (!dir_ctx->entries) fat_dir_read(dir_ctx);
 
-    filler(buf, ".", NULL, 0, 0);
-    filler(buf, "..", NULL, 0, 0);
+    if (dir_ctx == dir_ctx_root) {
+        filler(buf, ".", NULL, 0, 0);
+        filler(buf, "..", NULL, 0, 0);
+    }
 
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &dir_ctx->entries[i];
