@@ -50,6 +50,9 @@ struct fatfuse_data {
     struct fat_dir_context *dir_ctx_root;
 };
 
+/* needed for statfs, which has no data arg */
+struct fatfuse_data *g_fatfuse_data = NULL;
+
 int fatfuse_init(struct fatfuse_data *data)
 {
     data->fd = open(data->file_path, O_RDWR);
@@ -69,6 +72,8 @@ int fatfuse_init(struct fatfuse_data *data)
         fprintf(stderr, "could not initialize root dir context");
         return 1;
     }
+
+    g_fatfuse_data = data;
 
     return 0;
 }
@@ -417,6 +422,20 @@ static int fatfuse_utimens(const char *path, const struct timespec tv[2],
 	return 0;
 }
 
+static int fatfuse_statfs(const char *path, struct statvfs *stbuf)
+{
+    struct fat_context *fat_ctx = g_fatfuse_data->fat_ctx;
+
+    stbuf->f_bsize = stbuf->f_frsize = fat_ctx->bootsector.sectors_per_cluster * fat_ctx->bootsector.bytes_per_sector;
+    stbuf->f_blocks = fat_ctx->num_clusters;
+    stbuf->f_bfree = stbuf->f_bavail = fat_free_cluster_count(fat_ctx);
+
+    stbuf->f_fsid = fat_ctx->bootsector_ext.ext16.volume_id;
+    stbuf->f_namemax = 255;
+
+	return 0;
+}
+
 static
 int fatfuse_opt_proc(void *data, const char *arg,
                      int key, struct fuse_args *outargs)
@@ -446,6 +465,7 @@ static const struct fuse_operations fatfuse_oper = {
     .create     = fatfuse_create,
     .mkdir      = fatfuse_mkdir,
     .utimens    = fatfuse_utimens,
+    .statfs     = fatfuse_statfs,
 };
 
 int main(int argc, char *argv[])
