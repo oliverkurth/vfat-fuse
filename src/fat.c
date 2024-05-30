@@ -101,7 +101,7 @@ struct fat_context *init_fat_context(int fd)
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
         ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
-        ctx->num_clusters = ctx->bootsector.total_sectors16 / ctx->bootsector.sectors_per_cluster;
+        ctx->num_clusters = total_sectors / ctx->bootsector.sectors_per_cluster;
         ctx->type = FAT_TYPE16;
     } else {
         fprintf(stderr, "fat type FAT12 not (yet) supported\n");
@@ -207,14 +207,6 @@ bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)
         return (cluster & 0xFFF8) == 0xFFF8;
 }
 
-uint32_t fat_get_cluster_value(struct fat_context *fat_ctx, uint32_t cluster)
-{
-    if (fat_ctx->type == FAT_TYPE32) {
-        return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
-    }
-    return fat_ctx->fat16[cluster] & 0xFFFF;
-}
-
 int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
     int64_t fat_start_sector = fat_ctx->bootsector.reserved_sectors_count;
@@ -291,8 +283,8 @@ int32_t fat_allocate_cluster(struct fat_context *fat_ctx, int32_t cluster_hint)
     if (cluster_hint < 2)
         cluster_hint = 2;
 
-    for(cluster = 2; cluster < fat_ctx->num_clusters; cluster++){
-        if (fat_get_cluster_value(fat_ctx, cluster) == 0) {
+    for(cluster = cluster_hint; cluster < fat_ctx->num_clusters; cluster++){
+        if (fat_next_cluster(fat_ctx, cluster) == 0) {
             fat_set_cluster_eoc(fat_ctx, cluster);
             fat_write_fat_cluster(fat_ctx, cluster);
 
@@ -413,7 +405,7 @@ ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, si
 
         int32_t last_cluster;
         for (last_cluster = fat_dir_entry_get_cluster(entry);
-             last_cluster && !fat_cluster_is_eoc(fat_ctx, fat_get_cluster_value(fat_ctx, last_cluster));
+             last_cluster && !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
              last_cluster = fat_next_cluster(fat_ctx, last_cluster));
 
         if (last_cluster == 0) {
@@ -987,6 +979,7 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         int32_t cluster = fat_allocate_cluster(fat_ctx, 0);
 
         if (cluster < 2) {
+            fprintf(stderr, "fat_allocate_cluster failed\n");
             return -1;
         }
 
