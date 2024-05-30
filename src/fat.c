@@ -30,7 +30,31 @@ struct fat_context *init_fat_context(int fd)
         goto error;
 
     int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
-    if (ctx->bootsector.total_sectors16 == 0) {
+
+    int32_t total_sectors = ctx->bootsector.total_sectors16;
+    if (total_sectors == 0)
+        total_sectors = ctx->bootsector.total_sectors32;
+
+    int32_t fat_sectors = ctx->bootsector.fat_size16;
+    if (fat_sectors == 0)
+        fat_sectors = ctx->bootsector_ext.ext32.fat_size;
+
+    int32_t root_dir_start_sector = fat_start_sector + ctx->bootsector.num_fats * fat_sectors;
+    int32_t root_dir_sectors = (32 * ctx->bootsector.root_entry_count + ctx->bootsector.bytes_per_sector - 1) / ctx->bootsector.bytes_per_sector;
+    int32_t data_start_sector = root_dir_start_sector + root_dir_sectors;
+    int32_t data_sectors = total_sectors - data_start_sector;
+    int32_t cluster_count = data_sectors / ctx->bootsector.sectors_per_cluster;
+
+    /* FAT type only determined by cluster count */
+    if (cluster_count <= 4085) {
+        ctx->type = FAT_TYPE12;
+    } else if(cluster_count <= 65525) {
+        ctx->type = FAT_TYPE16;
+    } else {
+        ctx->type = FAT_TYPE32;
+    }
+
+    if (ctx->type == FAT_TYPE32) {
         /* FAT32 */
         int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
@@ -40,8 +64,10 @@ struct fat_context *init_fat_context(int fd)
                    ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
                    fat_start_sector * ctx->bootsector.bytes_per_sector);
 
-        if (rc != ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector)
+        if (rc != ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector) {
+            fprintf(stderr, "reading FAT32 failed\n");
             goto error;
+        }
 
         ctx->data_start_sector = fat_start_sector + fat_sectors;
         ctx->num_clusters = ctx->bootsector.total_sectors32 / ctx->bootsector.sectors_per_cluster;
@@ -53,10 +79,12 @@ struct fat_context *init_fat_context(int fd)
                    sizeof(struct fat_fsinfo),
                    ctx->bootsector_ext.ext32.fs_info_sector * ctx->bootsector.bytes_per_sector);
 
-        if (rc != sizeof(struct fat_fsinfo))
+        if (rc != sizeof(struct fat_fsinfo)) {
+            fprintf(stderr, "reading fsinfo failed\n");
             goto error;
+        }
 
-    } else {
+    } else if (ctx->type == FAT_TYPE16) {
         /* FAT16 or FAT12 */
         int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
 
@@ -66,13 +94,18 @@ struct fat_context *init_fat_context(int fd)
                    ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector,
                    fat_start_sector * ctx->bootsector.bytes_per_sector);
 
-        if (rc != ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector)
-            goto error;
+        if (rc != ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector) {
+               fprintf(stderr, "reading FAT16 failed\n");
+               goto error;
+           }
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
         ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
         ctx->num_clusters = ctx->bootsector.total_sectors16 / ctx->bootsector.sectors_per_cluster;
         ctx->type = FAT_TYPE16;
+    } else {
+        fprintf(stderr, "fat type FAT12 not (yet) supported\n");
+        goto error;
     }
     ctx->fd = fd;
 
