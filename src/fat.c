@@ -573,7 +573,7 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
 
     int hour = time >> 11;
     int minute = (time >> 5) & 0x3f;
-    int second = (time & 0x3f) * 2;
+    int second = (time & 0x1f) << 1;
 
     snprintf(buf, buf_size, "%4d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second);
 
