@@ -327,6 +327,15 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
 
+    while (pos >= bytes_per_cluster && !fat_cluster_is_eoc(fat_ctx, cluster)) {
+        cluster = fat_next_cluster(fat_ctx, cluster);
+        pos -= bytes_per_cluster;
+    }
+    if (fat_cluster_is_eoc(fat_ctx, cluster)) {
+        fprintf(stderr, "attempt to write beyond end of cluster chain\n");
+        return -1;
+    }
+
     while ((len > 0) && (cluster > 0) && !fat_cluster_is_eoc(fat_ctx, cluster)) {
         int64_t sector = fat_get_sector_from_cluster(fat_ctx, cluster);
         uint32_t skip = pos & (bytes_per_cluster - 1);
@@ -893,19 +902,44 @@ static char *_str_to_sfn(const char *name, char *buf)
 int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr)
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
+    size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
     int i;
 
     for (i = 0; dir_ctx->entries[i].name[0] && i < dir_ctx->num_entries; i++)
         if (dir_ctx->entries[i].name[0] == 0xe5)
             break;
 
-    if (i >= dir_ctx->num_entries)
-        /* TODO: need to allocate new cluster for entries */
-        return -1;
+    if (i >= dir_ctx->num_entries) {
+        int32_t last_cluster;
+        for (last_cluster = dir_ctx->first_cluster;
+             !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
+             last_cluster = fat_next_cluster(fat_ctx, last_cluster));
+
+        int32_t new_cluster = fat_allocate_cluster(fat_ctx, 0);
+        fat_write_fat_cluster(fat_ctx, new_cluster);
+
+        uint8_t buf0[bytes_per_cluster];
+        memset(buf0, 0, bytes_per_cluster);
+
+        fat_file_pwrite_to_cluster(fat_ctx, new_cluster,
+                                   (void *)buf0,
+                                   0, bytes_per_cluster);
+        fat_set_cluster(fat_ctx, last_cluster, new_cluster);
+        fat_write_fat_cluster(fat_ctx, last_cluster);
+
+        int old_max = dir_ctx->num_entries;
+        dir_ctx->num_entries += bytes_per_cluster / sizeof(struct fat_dir_entry);
+        dir_ctx->entries = realloc(dir_ctx->entries, dir_ctx->num_entries * sizeof(struct fat_dir_entry));
+        dir_ctx->sub_dirs = realloc(dir_ctx->sub_dirs, dir_ctx->num_entries * sizeof(struct fat_dir_context *));
+        /* realloc does not zero out */
+        memset(&dir_ctx->entries[old_max], 0, bytes_per_cluster);
+        memset(&dir_ctx->sub_dirs[old_max], 0, (dir_ctx->num_entries - old_max) * sizeof(struct fat_dir_context *));
+    }
+
+    struct fat_dir_entry *entry = &dir_ctx->entries[i];
 
     _fat_dir_delete_lfn_entries(dir_ctx, i);
 
-    struct fat_dir_entry *entry = &dir_ctx->entries[i];
     memset((void *)entry, 0, sizeof(struct fat_dir_entry));
     _str_to_sfn(name, entry->name);
     entry->attr = attr;
@@ -924,7 +958,6 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         }
 
         struct fat_dir_context *newdir_ctx = _init_fat_dir_context(fat_ctx, cluster);
-        size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
 
         newdir_ctx->entries = calloc(bytes_per_cluster, 1);
         newdir_ctx->num_entries = bytes_per_cluster / sizeof(struct fat_dir_entry);
