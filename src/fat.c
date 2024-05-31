@@ -389,6 +389,22 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
     return ptr - (uint8_t *)buf;
 }
 
+ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count)
+{
+    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
+    ssize_t wr;
+
+    if (dir_ctx->ctx_parent != NULL || fat_ctx->type == FAT_TYPE32) {
+        wr = fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
+                                       (void *)&dir_ctx->entries[index],
+                                       index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry) * count);
+    } else {
+        off_t pos = fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector;
+        wr = pwrite(fat_ctx->fd, (void *)&dir_ctx->entries[index], sizeof(struct fat_dir_entry) * count, pos);
+    }
+    return wr;
+}
+
 ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, size_t new_size)
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
@@ -554,9 +570,12 @@ struct fat_dir_context *_init_fat_dir_context(struct fat_context *fat_ctx, int32
     return ctx;
 }
 
-struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, struct fat_dir_context *ctx_parent, int index)
 {
-    struct fat_dir_context *ctx = _init_fat_dir_context(fat_ctx, first_cluster);
+    struct fat_dir_entry *entry = &ctx_parent->entries[index];
+    struct fat_dir_context *ctx = _init_fat_dir_context(fat_ctx, fat_dir_entry_get_cluster(entry));
+
+    ctx->ctx_parent = ctx_parent;
 
     fat_dir_read(ctx);
 
@@ -782,7 +801,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
             if (fat_name_matches_entry(ctx, entry, path_copy)) {
                 if (entry->attr & FAT_ATTR_DIRECTORY) {
                     if (ctx->sub_dirs[i] == NULL) {
-                        ctx->sub_dirs[i] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+                        ctx->sub_dirs[i] = init_fat_dir_context(ctx->fat_ctx, ctx, i);
                     }
                     if (path1 == NULL || path1[0] == 0) {
                         return ctx->sub_dirs[i];
@@ -826,8 +845,7 @@ struct fat_dir_context *fat_dir_get_dir_context(struct fat_dir_context *ctx, int
 {
     if (index >= 0) {
         if (ctx->sub_dirs[index] == NULL) {
-            struct fat_dir_entry *entry = &ctx->entries[index];
-            ctx->sub_dirs[index] = init_fat_dir_context(ctx->fat_ctx, fat_dir_entry_get_cluster(entry));
+            ctx->sub_dirs[index] = init_fat_dir_context(ctx->fat_ctx, ctx, index);
         }
         return ctx->sub_dirs[index];
     }
@@ -928,6 +946,7 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
+    ssize_t wr;
     int i;
 
     for (i = 0; dir_ctx->entries[i].name[0] && i < dir_ctx->num_entries; i++)
@@ -1015,28 +1034,23 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         dir_ctx->sub_dirs[i] = newdir_ctx;
     }
 
-    fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                               (void *)entry,
-                               i * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+    wr = fat_dir_write_entries(dir_ctx, i, 1);
+    if (wr < sizeof(struct fat_dir_entry))
+        return -1;
 
     return i;
 }
 
 int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
 {
-    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     ssize_t wr;
 
     _str_to_sfn(name, entry->name);
 
-    wr = fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                                    (void *)entry,
-                                    index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
-
+    wr = fat_dir_write_entries(dir_ctx, index, 1);
     if (wr < sizeof(struct fat_dir_entry))
         return -1;
 
     return 0;
 }
-

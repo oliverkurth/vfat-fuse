@@ -138,6 +138,7 @@ struct fat_context {
 
 struct fat_dir_context {
     struct fat_context *fat_ctx;
+    struct fat_dir_context *ctx_parent;
     int32_t first_cluster;
     int32_t num_entries;
     struct fat_dir_entry *entries;
@@ -169,7 +170,7 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
 ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, const void *buf, off_t pos, size_t len);
 ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *buf, off_t pos, size_t len);
 
-struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster);
+struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, struct fat_dir_context *ctx_parent, int index);
 struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx);
 void free_fat_dir_context(struct fat_dir_context *ctx);
 ssize_t fat_dir_read(struct fat_dir_context *ctx);
