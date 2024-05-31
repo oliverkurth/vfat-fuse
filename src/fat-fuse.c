@@ -363,6 +363,47 @@ static int fatfuse_create(const char *path, mode_t mode,
     return 0;
 }
 
+static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
+{
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    if(_fatfuse_find_entry_by_path(dir_ctx_root, to) != NULL)
+        return -EEXIST;
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, from);
+    if (!dir_ctx) {
+        fprintf(stderr, "dir not found\n");
+        return -ENOENT;
+    }
+
+    char path_copy_dir_from[strlen(from) + 1];
+    strcpy(path_copy_dir_from, from + 1);
+
+    char path_copy_dir_to[strlen(from) + 1];
+    strcpy(path_copy_dir_to, from + 1);
+
+    if (strcmp(dirname(path_copy_dir_from), dirname(path_copy_dir_to)) != 0)
+        return -ENOSYS;
+
+    char path_copy[strlen(from) + 1];
+    strcpy(path_copy, from + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0){
+        fprintf(stderr, "dir not found\n");
+        return -ENOENT;
+    }
+
+    char path_copy_base_to[strlen(to) + 1];
+    strcpy(path_copy_base_to, to + 1);
+
+    if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) != 0)
+        return errno ? -errno : -EIO;
+
+    return 0;
+}
+
 static int fatfuse_mkdir(const char *path, mode_t mode)
 {
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
@@ -461,6 +502,7 @@ static const struct fuse_operations fatfuse_oper = {
     .read       = fatfuse_read,
     .write      = fatfuse_write,
     .unlink     = fatfuse_unlink,
+    .rename     = fatfuse_rename,
     .rmdir      = fatfuse_rmdir,
     .create     = fatfuse_create,
     .mkdir      = fatfuse_mkdir,

@@ -500,7 +500,7 @@ ssize_t fat_dir_read_root16(struct fat_dir_context *ctx)
         free(ctx->entries);
     ctx->entries = malloc(dir_size);
 
-    ctx->num_entries = dir_size / sizeof(struct fat_dir_entry);
+    ctx->num_entries = bs->root_entry_count;
 
     if (ctx->sub_dirs)
         free(ctx->sub_dirs);
@@ -1021,3 +1021,22 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
 
     return i;
 }
+
+int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
+{
+    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+    ssize_t wr;
+
+    _str_to_sfn(name, entry->name);
+
+    wr = fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
+                                    (void *)entry,
+                                    index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+
+    if (wr < sizeof(struct fat_dir_entry))
+        return -1;
+
+    return 0;
+}
+
