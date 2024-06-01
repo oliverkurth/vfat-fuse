@@ -942,47 +942,150 @@ static char *_str_to_sfn(const char *name, char *buf)
     return buf;
 }
 
+bool _name_needs_lfn(const char *name)
+{
+    const char *p = name;
+    const char *dot = NULL;
+    const char *specials = "$%'-_@~`!(){}^#&";
+
+    while(*p) {
+        if ((dot == NULL) && p - 8 > name)
+            return true;
+        else if (dot && p - 3 > dot)
+            return true;
+        if (islower(*p))
+            return true;
+        if (*p == '.') {
+            if (dot != NULL)
+                return true;
+            dot = p;
+        }
+        if (!isalnum(*p) && *p < 0x80 && *p != '.') {
+            const char *s = specials;
+            while(*s) {
+                if (*p == *s)
+                    break;
+                s++;
+            }
+            if (!*s)
+                return true;
+        }
+        p++;
+    }
+    return false;
+}
+
+int _create_lfn_entry(struct fat_dir_context *dir_ctx, int index, const wchar_t *wname)
+{
+    int i;
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+    struct fat_lfn_entry *lfn_entry = (struct fat_lfn_entry *)&(entry[-1]);
+    uint8_t checksum = _lfn_checksum(entry->name);
+    const wchar_t *wq = wname;
+    uint16_t *p16;
+
+    for (i = 0; (struct fat_dir_entry *)lfn_entry >= dir_ctx->entries; i++, lfn_entry--) {
+        memset(lfn_entry, 0, sizeof(struct fat_lfn_entry));
+        lfn_entry->seq_number = (uint8_t)i+1;
+        for (p16 = lfn_entry->name1; *wq && p16 < lfn_entry->name1+5; *p16++ = (uint16_t)*wq++);
+        for (p16 = lfn_entry->name2; *wq && p16 < lfn_entry->name2+6; *p16++ = (uint16_t)*wq++);
+        for (p16 = lfn_entry->name3; *wq && p16 < lfn_entry->name3+2; *p16++ = (uint16_t)*wq++);
+        lfn_entry->attr = FAT_ATTR_LONG_FILE_NAME;
+        lfn_entry->checksum = checksum;
+        if (!*wq) {
+            lfn_entry->seq_number |= FAT_LFN_LAST_LONG_ENTRY;
+            break;
+        }
+    }
+    if (*wq)
+        return -1;
+    return i + 1;
+}
+
+/* returns index of main entry, lfn entries will be before that */
+int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
+{
+    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
+    int i, found = 0, pos = 0;
+
+    printf("%s: count=%d\n", __FUNCTION__, count);
+
+    /* find sufficiently large block of deleted entries */
+    for (i = 0; i < dir_ctx->num_entries; i++) {
+        if (dir_ctx->entries[i].name[0] == 0xe5 || dir_ctx->entries[i].name[0] == 0) {
+            if (!found)
+                pos = i;
+            found++;
+            if (found == count)
+                break;
+        } else {
+            found = 0;
+        }
+    }
+
+    printf("%s: i=%d, pos=%d, found=%d\n", __FUNCTION__, i, pos, found);
+
+    if (found == count)
+        return pos + count - 1;
+
+    if (dir_ctx->ctx_parent == NULL && fat_ctx->type != FAT_TYPE32)
+        /* cannot allocate additional clusters for root dir in FAT12/16 */
+        return -1;
+
+    pos = dir_ctx->num_entries - found;
+
+    if ((pos + count) > (1 << 16))
+        /* 2^16 is the max entries */
+        return -1;
+
+    int32_t last_cluster;
+    size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
+
+    for (last_cluster = dir_ctx->first_cluster;
+         !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
+         last_cluster = fat_next_cluster(fat_ctx, last_cluster));
+
+    int32_t new_cluster = fat_allocate_cluster(fat_ctx, 0);
+    fat_write_fat_cluster(fat_ctx, new_cluster);
+
+    uint8_t buf0[bytes_per_cluster];
+    memset(buf0, 0, bytes_per_cluster);
+
+    fat_file_pwrite_to_cluster(fat_ctx, new_cluster,
+                               (void *)buf0,
+                               0, bytes_per_cluster);
+    fat_set_cluster(fat_ctx, last_cluster, new_cluster);
+    fat_write_fat_cluster(fat_ctx, last_cluster);
+
+    int old_max = dir_ctx->num_entries;
+    dir_ctx->num_entries += bytes_per_cluster / sizeof(struct fat_dir_entry);
+    dir_ctx->entries = realloc(dir_ctx->entries, dir_ctx->num_entries * sizeof(struct fat_dir_entry));
+    dir_ctx->sub_dirs = realloc(dir_ctx->sub_dirs, dir_ctx->num_entries * sizeof(struct fat_dir_context *));
+    /* realloc does not zero out */
+    memset(&dir_ctx->entries[old_max], 0, bytes_per_cluster);
+    memset(&dir_ctx->sub_dirs[old_max], 0, (dir_ctx->num_entries - old_max) * sizeof(struct fat_dir_context *));
+
+    return pos + count - 1;
+}
+
 int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr)
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
     ssize_t wr;
-    int i;
+    int index, count = 1;
+    wchar_t wname[strlen(name)+1];
 
-    for (i = 0; dir_ctx->entries[i].name[0] && i < dir_ctx->num_entries; i++)
-        if (dir_ctx->entries[i].name[0] == 0xe5)
-            break;
-
-    if (i >= dir_ctx->num_entries) {
-        int32_t last_cluster;
-        for (last_cluster = dir_ctx->first_cluster;
-             !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
-             last_cluster = fat_next_cluster(fat_ctx, last_cluster));
-
-        int32_t new_cluster = fat_allocate_cluster(fat_ctx, 0);
-        fat_write_fat_cluster(fat_ctx, new_cluster);
-
-        uint8_t buf0[bytes_per_cluster];
-        memset(buf0, 0, bytes_per_cluster);
-
-        fat_file_pwrite_to_cluster(fat_ctx, new_cluster,
-                                   (void *)buf0,
-                                   0, bytes_per_cluster);
-        fat_set_cluster(fat_ctx, last_cluster, new_cluster);
-        fat_write_fat_cluster(fat_ctx, last_cluster);
-
-        int old_max = dir_ctx->num_entries;
-        dir_ctx->num_entries += bytes_per_cluster / sizeof(struct fat_dir_entry);
-        dir_ctx->entries = realloc(dir_ctx->entries, dir_ctx->num_entries * sizeof(struct fat_dir_entry));
-        dir_ctx->sub_dirs = realloc(dir_ctx->sub_dirs, dir_ctx->num_entries * sizeof(struct fat_dir_context *));
-        /* realloc does not zero out */
-        memset(&dir_ctx->entries[old_max], 0, bytes_per_cluster);
-        memset(&dir_ctx->sub_dirs[old_max], 0, (dir_ctx->num_entries - old_max) * sizeof(struct fat_dir_context *));
+    if (_name_needs_lfn(name)) {
+        str_to_wstr(name, wname);
+        count += (wcslen(wname)-1)/13+1;
     }
 
-    struct fat_dir_entry *entry = &dir_ctx->entries[i];
+    index = fat_dir_allocate_entries(dir_ctx, count);
+    if (index < 0)
+        return -index;
 
-    _fat_dir_delete_lfn_entries(dir_ctx, i);
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
 
     memset((void *)entry, 0, sizeof(struct fat_dir_entry));
     _str_to_sfn(name, entry->name);
@@ -992,6 +1095,9 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
     fat_time_to_fat((time_t)0, &entry->creation_date, &entry->creation_time);
     entry->write_time = entry->creation_time;
     entry->write_date = entry->creation_date;
+
+    if (count > 1) /* have LFN entries */
+        _create_lfn_entry(dir_ctx, index, wname);
 
     if (attr & FAT_ATTR_DIRECTORY) {
         /* move to own function? */
@@ -1027,18 +1133,21 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         sub_entries[1].first_cluster_low = dir_ctx->first_cluster & 0xffff;
         sub_entries[1].first_cluster_high = (dir_ctx->first_cluster >> 16) & 0xffff;
 
-        fat_file_pwrite_to_cluster(fat_ctx, cluster,
-                                   (void *)sub_entries,
-                                   0, bytes_per_cluster);
+        wr = fat_file_pwrite_to_cluster(
+            fat_ctx, cluster,
+            (void *)sub_entries,
+            0, bytes_per_cluster);
+        if (wr < bytes_per_cluster)
+            return -1;
 
-        dir_ctx->sub_dirs[i] = newdir_ctx;
+        dir_ctx->sub_dirs[index] = newdir_ctx;
     }
 
-    wr = fat_dir_write_entries(dir_ctx, i, 1);
+    wr = fat_dir_write_entries(dir_ctx, index - count + 1, count);
     if (wr < sizeof(struct fat_dir_entry))
         return -1;
 
-    return i;
+    return index;
 }
 
 int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
