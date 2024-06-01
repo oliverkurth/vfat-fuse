@@ -457,8 +457,6 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
-    int32_t cluster;
-    ssize_t wr;
 
     if (!(entry->attr & FAT_ATTR_DIRECTORY)) {
         /* extend file if needed */
@@ -467,15 +465,8 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
         }
     }
 
-    cluster = fat_find_cluster(fat_ctx, entry, pos);
-
-    if (cluster < 0) {
-        fprintf(stderr, "fat_find_cluster failed\n");
-        errno = EIO;
-        return -1;
-    }
-
-    wr = fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
+    int32_t cluster = fat_dir_entry_get_cluster(entry);
+    ssize_t wr = wr = fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
     if (wr > 0) {
         /* update write time */
         fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
@@ -1008,8 +999,6 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     int i, found = 0, pos = 0;
 
-    printf("%s: count=%d\n", __FUNCTION__, count);
-
     /* find sufficiently large block of deleted entries */
     for (i = 0; i < dir_ctx->num_entries; i++) {
         if (dir_ctx->entries[i].name[0] == 0xe5 || dir_ctx->entries[i].name[0] == 0) {
@@ -1022,8 +1011,6 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
             found = 0;
         }
     }
-
-    printf("%s: i=%d, pos=%d, found=%d\n", __FUNCTION__, i, pos, found);
 
     if (found == count)
         return pos + count - 1;
