@@ -398,7 +398,7 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     char path_copy_base_to[strlen(to) + 1];
     strcpy(path_copy_base_to, to + 1);
 
-    if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) != 0)
+    if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
         return errno ? -errno : -EIO;
 
     return 0;
