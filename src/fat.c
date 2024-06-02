@@ -422,7 +422,7 @@ ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int co
                                        index * sizeof(struct fat_dir_entry), size);
         check_cond(wr == size);
     } else {
-        off_t pos = fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector;
+        off_t pos = fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector + index * sizeof(struct fat_dir_entry);
         wr = pwrite(fat_ctx->fd, (void *)&dir_ctx->entries[index], size, pos);
         check_cond(wr == size);
     }
