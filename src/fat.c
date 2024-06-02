@@ -906,7 +906,7 @@ int _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
             lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
             if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
                 lfn_entry->seq_number = 0xe5;
-                rc = fat_dir_write_entries(dir_ctx, j * sizeof(struct fat_lfn_entry), 1);
+                rc = fat_dir_write_entries(dir_ctx, j, 1);
                 check_cond(rc >= 0);
             } else
                 break;
