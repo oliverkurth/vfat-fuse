@@ -410,9 +410,9 @@ error:
 
 ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count)
 {
+    int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     ssize_t wr, size;
-    int rc = 0;
 
     size = sizeof(struct fat_dir_entry) * count;
 
@@ -500,7 +500,8 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
 
     /* update write time */
     fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
-    fat_dir_write_entries(dir_ctx, index, 1);
+    rc = fat_dir_write_entries(dir_ctx, index, 1);
+    check_cond(rc >= 0);
 
     return wr;
 error:
@@ -895,19 +896,24 @@ bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
 }
 
 static
-void _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
+int _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
 {
+    int rc = 0;
+
     if (dir_ctx->entries[index].name[0] == 0xe5) {
         struct fat_lfn_entry *lfn_entry;
         for(int j = index - 1; j > 0; j--) {
             lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
             if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
                 lfn_entry->seq_number = 0xe5;
-                fat_dir_write_entries(dir_ctx, j * sizeof(struct fat_lfn_entry), 1);
+                rc = fat_dir_write_entries(dir_ctx, j * sizeof(struct fat_lfn_entry), 1);
+                check_cond(rc >= 0);
             } else
                 break;
         }
     }
+error:
+    return rc;
 }
 
 static
@@ -926,8 +932,9 @@ int _fat_dir_count_lfn_entries(struct fat_dir_context *dir_ctx, int index)
     return count;
 }
 
-void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
+int far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
 {
+    int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     int32_t cluster = fat_dir_entry_get_cluster(entry);
@@ -943,8 +950,14 @@ void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
     entry->name[0] = 0xe5;
     entry->filesize = 0;
 
-    fat_dir_write_entries(dir_ctx, index, 1);
-    _fat_dir_delete_lfn_entries(dir_ctx, index);
+    rc = fat_dir_write_entries(dir_ctx, index, 1);
+    check_cond(rc >= 0);
+
+    rc = _fat_dir_delete_lfn_entries(dir_ctx, index);
+    check_cond(rc >= 0);
+
+error:
+    return rc;
 }
 
 /* convert a filename to a SFN entry. Does not NUL terminate */
@@ -1101,9 +1114,10 @@ error:
 
 int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr)
 {
+    int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
-    ssize_t wr;
+    ssize_t wr = 0;
     int index, count = 1;
     wchar_t wname[strlen(name)+1];
 
@@ -1175,10 +1189,11 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
     }
 
     wr = fat_dir_write_entries(dir_ctx, index - count + 1, count);
-    if (wr < sizeof(struct fat_dir_entry))
-        return -1;
+    check_cond(wr >= 0);
 
     return index;
+error:
+    return rc;
 }
 
 /* rename a file in same dir */
