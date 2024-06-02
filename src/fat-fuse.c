@@ -380,11 +380,8 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     char path_copy_dir_from[strlen(from) + 1];
     strcpy(path_copy_dir_from, from + 1);
 
-    char path_copy_dir_to[strlen(from) + 1];
-    strcpy(path_copy_dir_to, from + 1);
-
-    if (strcmp(dirname(path_copy_dir_from), dirname(path_copy_dir_to)) != 0)
-        return -ENOSYS;
+    char path_copy_dir_to[strlen(to) + 1];
+    strcpy(path_copy_dir_to, to + 1);
 
     char path_copy[strlen(from) + 1];
     strcpy(path_copy, from + 1);
@@ -398,8 +395,21 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     char path_copy_base_to[strlen(to) + 1];
     strcpy(path_copy_base_to, to + 1);
 
-    if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
-        return errno ? -errno : -EIO;
+    char *dir_from = dirname(path_copy_dir_from);
+    char *dir_to = dirname(path_copy_dir_to);
+
+    if (strcmp(dir_from, dir_to) == 0) {
+        if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
+            return errno ? -errno : -EIO;
+    } else {
+        struct fat_dir_context *dir_ctx_to = _fatfuse_find_dir_context(dir_ctx_root, to);
+        if (!dir_ctx_to) {
+            fprintf(stderr, "dest dir not found\n");
+            return -ENOENT;
+        }
+        if (fat_dir_entry_move(dir_ctx, index, dir_ctx_to, basename(path_copy_base_to)) < 0)
+            return errno ? -errno : -EIO;
+    }
 
     return 0;
 }
