@@ -1288,3 +1288,15 @@ int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_di
 
     return new_index;
 }
+
+int far_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr)
+{
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
+
+    entry->attr = attr;
+
+    ssize_t wr = fat_dir_write_entries(dir_ctx, index, 1);
+    if (wr < sizeof(struct fat_dir_entry))
+        return -1;
+    return 0;
+}

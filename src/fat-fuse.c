@@ -176,6 +176,45 @@ error:
     return rc;
 }
 
+static int fatfuse_chmod(const char *path, mode_t mode,
+		                 struct fuse_file_info *fi)
+{
+    (void) fi;
+    struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
+    struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+    struct fat_dir_entry *entry = NULL;
+
+    /* special case for root, which has no entry */
+    if (strcmp(path, "/") == 0) {
+        /* ignore */
+        return 0;
+    }
+
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx)
+        return -ENOENT;
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    if (index < 0)
+        return -ENOENT;
+
+    entry = &dir_ctx->entries[index];
+
+    uint8_t attr = entry->attr;
+    if (mode & S_IWUSR)
+        attr &= ~FAT_ATTR_READ_ONLY;
+    else
+        attr |= FAT_ATTR_READ_ONLY;
+
+    if (far_dir_entry_set_attr(dir_ctx, index, attr) != 0)
+        return -EIO;
+
+    return 0;
+}
+
 static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                            off_t offset, struct fuse_file_info *fi,
                            enum fuse_readdir_flags flags)
@@ -504,6 +543,7 @@ int fatfuse_opt_proc(void *data, const char *arg,
 
 static const struct fuse_operations fatfuse_oper = {
     .getattr	= fatfuse_getattr,
+    .chmod      = fatfuse_chmod,
     .readdir	= fatfuse_readdir,
     .open       = fatfuse_open,
     .read       = fatfuse_read,
@@ -542,8 +582,8 @@ int main(int argc, char *argv[])
         free(data.file_path);
         exit(1);
     }
-    if (!S_ISREG(stbuf.st_mode)) { // TODO: allow device file
-        fprintf(stderr, "fat file %s is not a regular file\n", data.file_path);
+    if (!S_ISREG(stbuf.st_mode) && !S_ISBLK(stbuf.st_mode)) {
+        fprintf(stderr, "fat file %s is not a regular file or block device\n", data.file_path);
         exit(1);
     }
 
