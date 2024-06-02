@@ -15,6 +15,21 @@
 #include <wchar.h>
 #include "fat.h"
 
+#define check_cond(COND) if(!(COND)) { \
+    fprintf(stderr, "check_cond failed in %s line %d\n", \
+        __FUNCTION__, __LINE__); \
+    rc = -1; \
+    ((void)(rc)); /* suppress "set but not used" warning */ \
+    goto error; \
+}
+
+#define check_ptr(ptr) if(!(ptr)) { \
+    fprintf(stderr, "check_ptr failed in %s line %d\n", \
+        __FUNCTION__, __LINE__); \
+    rc = -1; \
+    ((void)(rc)); /* suppress "set but not used" warning */ \
+    goto error; \
+}
 
 struct fat_context *init_fat_context(int fd)
 {
@@ -349,6 +364,7 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
 /* clusters need to be allocated already */
 ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, const void *buf, off_t pos, size_t len)
 {
+    int rc = 0;
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
 
@@ -356,6 +372,7 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
         cluster = fat_next_cluster(fat_ctx, cluster);
         pos -= bytes_per_cluster;
     }
+
     if (fat_cluster_is_eoc(fat_ctx, cluster)) {
         fprintf(stderr, "attempt to write beyond end of cluster chain\n");
         return -1;
@@ -387,32 +404,41 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
             cluster = fat_next_cluster(fat_ctx, cluster);
     }
     return ptr - (uint8_t *)buf;
+error:
+    return rc;
 }
 
 ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count)
 {
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
-    ssize_t wr;
+    ssize_t wr, size;
+    int rc = 0;
+
+    size = sizeof(struct fat_dir_entry) * count;
 
     if (dir_ctx->ctx_parent != NULL || fat_ctx->type == FAT_TYPE32) {
         wr = fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
                                        (void *)&dir_ctx->entries[index],
-                                       index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry) * count);
+                                       index * sizeof(struct fat_dir_entry), size);
+        check_cond(wr == size);
     } else {
         off_t pos = fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector;
-        wr = pwrite(fat_ctx->fd, (void *)&dir_ctx->entries[index], sizeof(struct fat_dir_entry) * count, pos);
+        wr = pwrite(fat_ctx->fd, (void *)&dir_ctx->entries[index], size, pos);
+        check_cond(wr == size);
     }
     return wr;
+error:
+    return rc;
 }
 
 ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, size_t new_size)
 {
+    int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     int32_t cl_count_current = ((int)entry->filesize - 1)/bytes_per_cluster + 1;
     int32_t cl_count_needed = (new_size - 1)/bytes_per_cluster + 1;
-
     int32_t cluster;
 
     if (cl_count_needed > cl_count_current) {
@@ -428,17 +454,19 @@ ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, si
             /* no cluster yet for entry */
             last_cluster = fat_allocate_cluster(fat_ctx, 0);
             fat_dir_entry_set_cluster(entry, last_cluster);
-            fat_file_pwrite_to_cluster(fat_ctx, last_cluster,
-                                       (void *)buf0,
-                                       0, bytes_per_cluster);
+            ssize_t wr = fat_file_pwrite_to_cluster(fat_ctx, last_cluster,
+                                                    (void *)buf0,
+                                                    0, bytes_per_cluster);
+            check_cond(wr == bytes_per_cluster);
             cl_count_current++;
         }
 
         while (cl_count_needed > cl_count_current) {
             cluster = fat_allocate_cluster(fat_ctx, last_cluster);
-            fat_file_pwrite_to_cluster(fat_ctx, cluster,
-                                       (void *)buf0,
-                                       0, bytes_per_cluster);
+            ssize_t wr = fat_file_pwrite_to_cluster(fat_ctx, cluster,
+                                                    (void *)buf0,
+                                                    0, bytes_per_cluster);
+            check_cond(wr == bytes_per_cluster);
             fat_set_cluster(fat_ctx, last_cluster, cluster);
             fat_write_fat_cluster(fat_ctx, last_cluster);
             last_cluster = cluster;
@@ -446,15 +474,16 @@ ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, si
         }
     }
     entry->filesize = new_size;
-    fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                               (void *)entry,
-                               index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+    fat_dir_write_entries(dir_ctx, index, 1);
 
     return new_size;
+error:
+    return rc;
 }
 
 ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *buf, off_t pos, size_t len)
 {
+    int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
 
@@ -466,15 +495,16 @@ ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *
     }
 
     int32_t cluster = fat_dir_entry_get_cluster(entry);
-    ssize_t wr = wr = fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
-    if (wr > 0) {
-        /* update write time */
-        fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
-        fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                                   (void *)entry,
-                                   index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
-    }
+    ssize_t wr = fat_file_pwrite_to_cluster(fat_ctx, cluster, buf, pos, len);
+    check_cond(wr == len);
+
+    /* update write time */
+    fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
+    fat_dir_write_entries(dir_ctx, index, 1);
+
     return wr;
+error:
+    return rc;
 }
 
 void free_fat_dir_context(struct fat_dir_context *ctx)
@@ -552,21 +582,21 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
 }
 
 static
-struct fat_dir_context *_init_fat_dir_context(struct fat_context *fat_ctx, int32_t first_cluster)
+struct fat_dir_context *_init_fat_dir_context(struct fat_context *fat_ctx, struct fat_dir_context *ctx_parent, int32_t first_cluster)
 {
     struct fat_dir_context *ctx = calloc(sizeof(struct fat_dir_context), 1);
 
     ctx->fat_ctx = fat_ctx;
     ctx->first_cluster = first_cluster;
+    ctx->ctx_parent = ctx_parent;
+
     return ctx;
 }
 
 struct fat_dir_context *init_fat_dir_context(struct fat_context *fat_ctx, struct fat_dir_context *ctx_parent, int index)
 {
     struct fat_dir_entry *entry = &ctx_parent->entries[index];
-    struct fat_dir_context *ctx = _init_fat_dir_context(fat_ctx, fat_dir_entry_get_cluster(entry));
-
-    ctx->ctx_parent = ctx_parent;
+    struct fat_dir_context *ctx = _init_fat_dir_context(fat_ctx, ctx_parent, fat_dir_entry_get_cluster(entry));
 
     fat_dir_read(ctx);
 
@@ -578,10 +608,10 @@ struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx)
     struct fat_dir_context *ctx;
 
     if (fat_ctx->type == FAT_TYPE32) {
-        ctx = _init_fat_dir_context(fat_ctx, fat_first_cluster(fat_ctx));
+        ctx = _init_fat_dir_context(fat_ctx, NULL, fat_first_cluster(fat_ctx));
         fat_dir_read(ctx);
     } else {
-        ctx = _init_fat_dir_context(fat_ctx, 0);
+        ctx = _init_fat_dir_context(fat_ctx, NULL, 0);
         fat_dir_read_root16(ctx);
     }
     return ctx;
@@ -866,8 +896,6 @@ bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
 
 void _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
 {
-    struct fat_context *fat_ctx = dir_ctx->fat_ctx;
-
     /* mark associated lfn entries as deleted before using this one */
     if (dir_ctx->entries[index].name[0] == 0xe5) {
         struct fat_lfn_entry *lfn_entry;
@@ -875,9 +903,7 @@ void _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
             lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
             if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
                 lfn_entry->seq_number = 0xe5;
-                fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                                       (void *)lfn_entry,
-                                       j * sizeof(struct fat_lfn_entry), sizeof(struct fat_lfn_entry));
+                fat_dir_write_entries(dir_ctx, j * sizeof(struct fat_lfn_entry), 1);
             } else
                 break;
         }
@@ -901,10 +927,7 @@ void far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
     entry->name[0] = 0xe5;
     entry->filesize = 0;
 
-    fat_file_pwrite_to_cluster(fat_ctx, dir_ctx->first_cluster,
-                               (void *)entry,
-                               index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
-
+    fat_dir_write_entries(dir_ctx, index, 1);
     _fat_dir_delete_lfn_entries(dir_ctx, index);
 }
 
@@ -996,6 +1019,7 @@ int _create_lfn_entry(struct fat_dir_context *dir_ctx, int index, const wchar_t 
 /* returns index of main entry, lfn entries will be before that */
 int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
 {
+    int rc;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
     int i, found = 0, pos = 0;
 
@@ -1015,9 +1039,10 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
     if (found == count)
         return pos + count - 1;
 
-    if (dir_ctx->ctx_parent == NULL && fat_ctx->type != FAT_TYPE32)
-        /* cannot allocate additional clusters for root dir in FAT12/16 */
+    if (dir_ctx->ctx_parent == NULL && fat_ctx->type != FAT_TYPE32) {
+        fprintf(stderr, "cannot allocate additional clusters for root dir in FAT12/16\n");
         return -1;
+    }
 
     pos = dir_ctx->num_entries - found;
 
@@ -1038,9 +1063,10 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
     uint8_t buf0[bytes_per_cluster];
     memset(buf0, 0, bytes_per_cluster);
 
-    fat_file_pwrite_to_cluster(fat_ctx, new_cluster,
-                               (void *)buf0,
-                               0, bytes_per_cluster);
+    ssize_t wr = fat_file_pwrite_to_cluster(fat_ctx, new_cluster,
+                                            (void *)buf0,
+                                            0, bytes_per_cluster);
+    check_cond(wr == bytes_per_cluster);
     fat_set_cluster(fat_ctx, last_cluster, new_cluster);
     fat_write_fat_cluster(fat_ctx, last_cluster);
 
@@ -1053,6 +1079,8 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
     memset(&dir_ctx->sub_dirs[old_max], 0, (dir_ctx->num_entries - old_max) * sizeof(struct fat_dir_context *));
 
     return pos + count - 1;
+error:
+    return rc;
 }
 
 int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr)
@@ -1095,7 +1123,7 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
             return -1;
         }
 
-        struct fat_dir_context *newdir_ctx = _init_fat_dir_context(fat_ctx, cluster);
+        struct fat_dir_context *newdir_ctx = _init_fat_dir_context(fat_ctx, dir_ctx, cluster);
 
         newdir_ctx->entries = calloc(bytes_per_cluster, 1);
         newdir_ctx->num_entries = bytes_per_cluster / sizeof(struct fat_dir_entry);

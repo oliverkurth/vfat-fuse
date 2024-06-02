@@ -455,10 +455,7 @@ static int fatfuse_utimens(const char *path, const struct timespec tv[2],
         fat_time_to_fat((time_t)0, &entry->write_date, &entry->write_time);
         entry->last_access_date = entry->write_date;
     }
-
-    fat_file_pwrite_to_cluster(dir_ctx->fat_ctx, dir_ctx->first_cluster,
-                               (void *)entry,
-                               index * sizeof(struct fat_dir_entry), sizeof(struct fat_dir_entry));
+    fat_dir_write_entries(dir_ctx, index, 1);
 
 	return 0;
 }
