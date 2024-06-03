@@ -60,6 +60,8 @@ struct fat_context *init_fat_context(int fd)
     int32_t data_sectors = total_sectors - data_start_sector;
     int32_t cluster_count = data_sectors / ctx->bootsector.sectors_per_cluster;
 
+    ctx->num_clusters = (total_sectors - fat_sectors * ctx->bootsector.num_fats - ctx->bootsector.reserved_sectors_count) / ctx->bootsector.sectors_per_cluster;
+
     /* FAT type only determined by cluster count */
     if (cluster_count <= 4085) {
         ctx->type = FAT_TYPE12;
@@ -85,7 +87,6 @@ struct fat_context *init_fat_context(int fd)
         }
 
         ctx->data_start_sector = fat_start_sector + fat_sectors;
-        ctx->num_clusters = ctx->bootsector.total_sectors32 / ctx->bootsector.sectors_per_cluster;
         ctx->type = FAT_TYPE32;
 
         ctx->fs_info = malloc(sizeof(struct fat_fsinfo));
@@ -116,7 +117,6 @@ struct fat_context *init_fat_context(int fd)
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
         ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
-        ctx->num_clusters = total_sectors / ctx->bootsector.sectors_per_cluster;
         ctx->type = FAT_TYPE16;
     } else {
         fprintf(stderr, "fat type FAT12 not (yet) supported\n");
@@ -152,6 +152,7 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
     int32_t count = 0, i;
     if (fat_ctx->type == FAT_TYPE32) {
         for (i = 0; i < fat_ctx->num_clusters; i++) {
+            /* apparently fsck.vfat counts reserverd (value = 1) as free clusters */
             if (fat_ctx->fat32[i] == 0) {
                 count++;
             }
