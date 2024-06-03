@@ -1174,9 +1174,10 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
         sub_entries[0].first_cluster_low = entry->first_cluster_low;
         sub_entries[0].first_cluster_high = entry->first_cluster_high;
 
-        /* TODO: if parent is root dir set first_cluster to 0 */
-        sub_entries[1].first_cluster_low = dir_ctx->first_cluster & 0xffff;
-        sub_entries[1].first_cluster_high = (dir_ctx->first_cluster >> 16) & 0xffff;
+        if (dir_ctx->ctx_parent != NULL) {
+            sub_entries[1].first_cluster_low = dir_ctx->first_cluster & 0xffff;
+            sub_entries[1].first_cluster_high = (dir_ctx->first_cluster >> 16) & 0xffff;
+        }
 
         wr = fat_file_pwrite_to_cluster(
             fat_ctx, cluster,
