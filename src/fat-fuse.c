@@ -48,6 +48,7 @@ struct fatfuse_data {
     int fd;
     struct fat_context *fat_ctx;
     struct fat_dir_context *dir_ctx_root;
+    int read_only;
 };
 
 /* needed for statfs, which has no data arg */
@@ -55,7 +56,7 @@ struct fatfuse_data *g_fatfuse_data = NULL;
 
 int fatfuse_init(struct fatfuse_data *data)
 {
-    data->fd = open(data->file_path, O_RDWR);
+    data->fd = open(data->file_path, data->read_only ? O_RDONLY : O_RDWR);
     if (data->fd < 0) {
         fprintf(stderr, "could not open %s: %s (%d)", data->file_path, strerror(errno), errno);
         return 1;
@@ -184,6 +185,9 @@ static int fatfuse_chmod(const char *path, mode_t mode,
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
     struct fat_dir_entry *entry = NULL;
 
+    if (data->read_only)
+        return -EROFS;
+
     /* special case for root, which has no entry */
     if (strcmp(path, "/") == 0) {
         /* ignore */
@@ -270,10 +274,12 @@ static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 
     entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
 
-    if (entry->attr & FAT_ATTR_READ_ONLY)
-        if ((fi->flags & O_ACCMODE) != O_RDONLY)
+    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+        if (entry->attr & FAT_ATTR_READ_ONLY)
             return -EACCES;
-
+        if (data->read_only)
+            return -EROFS;
+    }
     return 0;
 }
 
@@ -304,6 +310,9 @@ static int fatfuse_write(const char *path, const char *buf, size_t size, off_t o
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
 
+    if (data->read_only)
+        return -EROFS;
+
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
         return -ENOENT;
@@ -326,6 +335,9 @@ static int fatfuse_unlink(const char *path)
 {
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    if (data->read_only)
+        return -EROFS;
 
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
@@ -352,6 +364,9 @@ static int fatfuse_rmdir(const char *path)
 {
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    if (data->read_only)
+        return -EROFS;
 
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
@@ -384,6 +399,9 @@ static int fatfuse_create(const char *path, mode_t mode,
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
 
+    if (data->read_only)
+        return -EROFS;
+
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
         return -ENOENT;
@@ -406,6 +424,9 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
 {
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    if (data->read_only)
+        return -EROFS;
 
     if(_fatfuse_find_entry_by_path(dir_ctx_root, to) != NULL)
         return -EEXIST;
@@ -458,6 +479,9 @@ static int fatfuse_mkdir(const char *path, mode_t mode)
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
 
+    if (data->read_only)
+        return -EROFS;
+
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
         return -ENOENT;
@@ -483,6 +507,9 @@ static int fatfuse_utimens(const char *path, const struct timespec tv[2],
 
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
+
+    if (data->read_only)
+        return -EROFS;
 
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
     if (!dir_ctx)
@@ -585,6 +612,14 @@ int main(int argc, char *argv[])
     if (!S_ISREG(stbuf.st_mode) && !S_ISBLK(stbuf.st_mode)) {
         fprintf(stderr, "fat file %s is not a regular file or block device\n", data.file_path);
         exit(1);
+    }
+
+    if (access(data.file_path, W_OK) != 0) {
+        data.read_only = 1;
+    }
+
+    if (data.read_only) {
+        printf("mounting read-only\n");
     }
 
     argc_saved = args.argc;
