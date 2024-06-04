@@ -112,6 +112,14 @@ void dump_info(struct fat_context *fat_ctx)
         fat_ctx->rootdir16_sector,
         fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector,
         fat_ctx->rootdir16_sector * fat_ctx->bootsector.bytes_per_sector);
+
+    if (fat_ctx->type == FAT_TYPE32) {
+        printf("\n");
+        struct fat_fsinfo *fs_info = fat_ctx->fs_info;
+
+        printf("fs_info free_count = %d\n", fs_info->free_count);
+        printf("fs_info next_free = %d\n", fs_info->next_free);
+    }
 }
 
 void dump_dir_entry(struct fat_dir_entry *entry)

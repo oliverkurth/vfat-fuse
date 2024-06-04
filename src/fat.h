@@ -128,8 +128,11 @@ struct fat_context {
     int type;
     int fd;
 
-    int32_t *fat32;
-    int16_t *fat16;
+    union {
+        int32_t *fat32;
+        int16_t *fat16;
+        uint8_t *fat12;
+    };
 
     int64_t rootdir16_sector;
     int64_t data_start_sector;

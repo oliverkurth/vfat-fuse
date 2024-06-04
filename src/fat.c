@@ -147,21 +147,20 @@ void free_fat_context(struct fat_context *ctx)
     }
 }
 
+uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
+{
+    if (fat_ctx->type == FAT_TYPE32)
+        return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
+    else
+        return fat_ctx->fat16[cluster] & 0xFFFF;
+}
+
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
 {
     int32_t count = 0, i;
-    if (fat_ctx->type == FAT_TYPE32) {
-        for (i = 0; i < fat_ctx->num_clusters; i++) {
-            /* apparently fsck.vfat counts reserverd (value = 1) as free clusters */
-            if (fat_ctx->fat32[i] == 0) {
-                count++;
-            }
-        }
-    } else {
-        for (i = 0; i < fat_ctx->num_clusters; i++) {
-            if (fat_ctx->fat16[i] == 0) {
-                count++;
-            }
+    for (i = 0; i < fat_ctx->num_clusters; i++) {
+        if (fat_next_cluster(fat_ctx, i) == 0) {
+            count++;
         }
     }
     return count;
@@ -207,14 +206,6 @@ uint32_t fat_first_cluster(struct fat_context *fat_ctx)
         return 0;
 }
 
-uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
-{
-    if (fat_ctx->type == FAT_TYPE32)
-        return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
-    else
-        return fat_ctx->fat16[cluster] & 0xFFFF;
-}
-
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)
 {
     if (fat_ctx->type == FAT_TYPE32)
@@ -236,7 +227,7 @@ int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
             wr = pwrite(fat_ctx->fd, &fat_ctx->fat32[cluster], sizeof(uint32_t), offset);
             offset += fat_ctx->bootsector_ext.ext32.fat_size * fat_ctx->bootsector.bytes_per_sector;
         }
-    } else{
+    } else {
         offset += cluster * sizeof(uint16_t);
         for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
             wr = pwrite(fat_ctx->fd, &fat_ctx->fat16[cluster], sizeof(uint16_t), offset);
@@ -281,15 +272,11 @@ uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t
 
 uint32_t fat_set_cluster_eoc(struct fat_context *fat_ctx, uint32_t cluster)
 {
-    uint32_t old_value;
     if (fat_ctx->type == FAT_TYPE32) {
-        old_value = fat_ctx->fat32[cluster] & 0x0FFFFFFF;
-        fat_ctx->fat32[cluster] = 0x0FFFFFF8;
+        return fat_set_cluster(fat_ctx, cluster, 0x0FFFFFFF);
     } else {
-        old_value = fat_ctx->fat16[cluster] & 0xFFFF;
-        fat_ctx->fat16[cluster] = 0xFFF8;
+        return fat_set_cluster(fat_ctx, cluster, 0xFFFF);
     }
-    return old_value;
 }
 
 int32_t fat_allocate_cluster(struct fat_context *fat_ctx, int32_t cluster_hint)
