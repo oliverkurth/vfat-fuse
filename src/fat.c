@@ -903,7 +903,7 @@ int _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
 
     if (dir_ctx->entries[index].name[0] == 0xe5) {
         struct fat_lfn_entry *lfn_entry;
-        for(int j = index - 1; j > 0; j--) {
+        for(int j = index - 1; j >= 0; j--) {
             lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
             if (lfn_entry->attr == FAT_ATTR_LONG_FILE_NAME) {
                 lfn_entry->seq_number = 0xe5;
