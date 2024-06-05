@@ -100,7 +100,7 @@ struct fat_context *init_fat_context(int fd)
             goto error;
         }
 
-    } else if (ctx->type == FAT_TYPE16) {
+    } else {
         /* FAT16 or FAT12 */
         int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
 
@@ -117,10 +117,6 @@ struct fat_context *init_fat_context(int fd)
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
         ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
-        ctx->type = FAT_TYPE16;
-    } else {
-        fprintf(stderr, "fat type FAT12 not (yet) supported\n");
-        goto error;
     }
     ctx->fd = fd;
 
@@ -137,10 +133,9 @@ error:
 void free_fat_context(struct fat_context *ctx)
 {
     if (ctx) {
+        /* no need to free fat16, fat12 since it's a union */
         if (ctx->fat32)
             free(ctx->fat32);
-        if (ctx->fat16)
-            free(ctx->fat16);
         if (ctx->fs_info)
             free(ctx->fs_info);
         free(ctx);
@@ -150,9 +145,20 @@ void free_fat_context(struct fat_context *ctx)
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
     if (fat_ctx->type == FAT_TYPE32)
-        return fat_ctx->fat32[cluster] & 0x0FFFFFFF;
-    else
-        return fat_ctx->fat16[cluster] & 0xFFFF;
+        return fat_ctx->fat32[cluster] & 0x0fffffff;
+    else if (fat_ctx->type == FAT_TYPE16)
+        return fat_ctx->fat16[cluster] & 0xffff;
+    else {
+        uint32_t pos = cluster + cluster / 2, val;
+        if ((cluster & 1) == 0) {
+            /* even */
+            val = fat_ctx->fat12[pos] + (fat_ctx->fat12[pos+1] << 8);
+        } else {
+            /* odd */
+            val = (fat_ctx->fat12[pos] >> 4) + (fat_ctx->fat12[pos+1] << 4);
+        }
+        return val & 0xfff;
+    }
 }
 
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
@@ -210,8 +216,10 @@ bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster)
 {
     if (fat_ctx->type == FAT_TYPE32)
         return (cluster & 0x0FFFFFF8) == 0x0FFFFFF8;
-    else
+    else if (fat_ctx->type == FAT_TYPE16)
         return (cluster & 0xFFF8) == 0xFFF8;
+    else /* FAT_TYPE12 */
+        return (cluster & 0xFF8) == 0xFF8;
 }
 
 int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
@@ -227,10 +235,17 @@ int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
             wr = pwrite(fat_ctx->fd, &fat_ctx->fat32[cluster], sizeof(uint32_t), offset);
             offset += fat_ctx->bootsector_ext.ext32.fat_size * fat_ctx->bootsector.bytes_per_sector;
         }
-    } else {
+    } else if (fat_ctx->type == FAT_TYPE16) {
         offset += cluster * sizeof(uint16_t);
         for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
             wr = pwrite(fat_ctx->fd, &fat_ctx->fat16[cluster], sizeof(uint16_t), offset);
+            offset += fat_ctx->bootsector.fat_size16 * fat_ctx->bootsector.bytes_per_sector;
+        }
+    } else { /* FAT_TYPE12 */
+        int pos = cluster + cluster / 2;
+        offset += pos;
+        for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
+            wr = pwrite(fat_ctx->fd, &fat_ctx->fat12[pos], 2, offset);
             offset += fat_ctx->bootsector.fat_size16 * fat_ctx->bootsector.bytes_per_sector;
         }
     }
@@ -261,11 +276,22 @@ uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t
 {
     uint32_t old_value;
     if (fat_ctx->type == FAT_TYPE32) {
-        old_value = fat_ctx->fat32[cluster] & 0x0FFFFFFF;
+        old_value = fat_ctx->fat32[cluster] & 0x0fffffff;
         fat_ctx->fat32[cluster] = value;
-    } else {
-        old_value = fat_ctx->fat16[cluster] & 0xFFFF;
+    } else if (fat_ctx->type == FAT_TYPE16) {
+        old_value = fat_ctx->fat16[cluster] & 0xffff;
         fat_ctx->fat16[cluster] = value;
+    } else {
+        value &= 0xfff;
+        old_value = fat_next_cluster(fat_ctx, cluster);
+        uint32_t pos = cluster + cluster / 2;
+        if ((cluster & 1) == 0) {
+            fat_ctx->fat12[pos] = value & 0xff;
+            fat_ctx->fat12[pos+1] = (fat_ctx->fat12[pos+1] & 0xf0) | ((value >> 8) & 0x0f);
+        } else {
+            fat_ctx->fat12[pos] = (fat_ctx->fat12[pos] & 0x0f) | (value << 4);
+            fat_ctx->fat12[pos+1] = value >> 4;
+        }
     }
     return old_value;
 }
@@ -273,9 +299,11 @@ uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t
 uint32_t fat_set_cluster_eoc(struct fat_context *fat_ctx, uint32_t cluster)
 {
     if (fat_ctx->type == FAT_TYPE32) {
-        return fat_set_cluster(fat_ctx, cluster, 0x0FFFFFFF);
+        return fat_set_cluster(fat_ctx, cluster, 0x0fffffff);
+    } else if (fat_ctx->type == FAT_TYPE16) {
+        return fat_set_cluster(fat_ctx, cluster, 0xffff);
     } else {
-        return fat_set_cluster(fat_ctx, cluster, 0xFFFF);
+        return fat_set_cluster(fat_ctx, cluster, 0xfff);
     }
 }
 
