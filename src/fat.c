@@ -814,7 +814,7 @@ char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *
 
 bool fat_entry_is_valid(struct fat_dir_entry *entry)
 {
-    return (entry->name[0] != 0) && (entry->attr != FAT_ATTR_LONG_FILE_NAME) && (entry->name[0] != 0xe5);
+    return (entry->name[0] != 0) && (entry->attr != FAT_ATTR_LONG_FILE_NAME) && ((uint8_t)entry->name[0] != 0xe5);
 }
 
 struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, const char *path)
@@ -916,7 +916,7 @@ int _fat_dir_delete_lfn_entries(struct fat_dir_context *dir_ctx, int index)
 {
     int rc = 0;
 
-    if (dir_ctx->entries[index].name[0] == 0xe5) {
+    if ((uint8_t)dir_ctx->entries[index].name[0] == 0xe5) {
         struct fat_lfn_entry *lfn_entry;
         for(int j = index - 1; j >= 0; j--) {
             lfn_entry = (struct fat_lfn_entry *)&dir_ctx->entries[j];
@@ -1070,7 +1070,7 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
 
     /* find sufficiently large block of deleted entries */
     for (i = 0; i < dir_ctx->num_entries; i++) {
-        if (dir_ctx->entries[i].name[0] == 0xe5 || dir_ctx->entries[i].name[0] == 0) {
+        if ((uint8_t)dir_ctx->entries[i].name[0] == 0xe5 || dir_ctx->entries[i].name[0] == 0) {
             if (!found)
                 pos = i;
             found++;
