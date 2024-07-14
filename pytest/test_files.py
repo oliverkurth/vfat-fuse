@@ -6,7 +6,7 @@ import time
 
 
 BINDIR=os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "build"))
-FAT_FUSE=os.path.join(BINDIR, "fat-fuse")
+FAT_FUSE=os.path.join(BINDIR, "vfat-fuse")
 
 MNT_DIR=os.path.join(os.getcwd(), "pytest-mnt")
 

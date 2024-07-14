@@ -1,10 +1,10 @@
 Summary:      vFAT filesystem for FUSE
-Name:         fat-fuse
+Name:         vfat-fuse
 Version:      0.0.1
 Release:      0%{?dist}
 License:      GPL-2.0
 Group:        Development/Tools
-URL:          https://github.com/oliverkurth/fat-fuse
+URL:          https://github.com/oliverkurth/vfat-fuse
 Vendor:       Broadcom, Inc.
 Distribution: Photon
 
