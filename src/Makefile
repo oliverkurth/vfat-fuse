@@ -3,8 +3,8 @@ SRC_FUSE := fat.c fat-fuse.c
 
 OUTPUTDIR := ../build
 
-EXE_DUMP := $(OUTPUTDIR)/fat-dump
-EXE_FUSE := $(OUTPUTDIR)/fat-fuse
+EXE_DUMP := $(OUTPUTDIR)/vfat-dump
+EXE_FUSE := $(OUTPUTDIR)/vfat-fuse
 
 PREFIX ?= /usr/local
 
