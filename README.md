@@ -11,7 +11,7 @@ It's almost feature complete, but at a very early stage and probably has a few b
 
 Missing is proper creation of short filenames when a long file name entry is created. This may be an issue if multiple long filenames are converted to one single short name.
 
-Also missing is thread support, therefore you will need to set the `-s` option to start it in single thread mode.
+`vfat-fuse` currently is not threadsafe, therefore you will need to set the `-s` option to start it in single threaded mode.
 
 ## Building
 
@@ -21,4 +21,4 @@ Then build with `make`, install with `sudo make install`.
 
 ## Usage
 
-To mount a file system to a directory: `fat-fuse -s <imagefile or device> <directory>`. Example: `fat-fuse -s vfat.img mntdir`.
+To mount a file system to a directory: `vfat-fuse -s <imagefile or device> <directory>`. Example: `vfat-fuse -s vfat.img mntdir`.
