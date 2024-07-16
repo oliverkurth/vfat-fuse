@@ -1273,12 +1273,14 @@ int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_di
     ssize_t wr;
     int old_count = 1, new_count = 1, new_index = index;
     wchar_t wname[strlen(name)+1];
+    bool need_lfn = false;
 
     old_count += _fat_dir_count_lfn_entries(dir_ctx, index);
 
     if (_name_needs_lfn(name)) {
         str_to_wstr(name, wname);
         new_count += (wcslen(wname)-1)/13+1;
+        need_lfn = true;
     }
 
     new_index = fat_dir_allocate_entries(dir_ctx_dest, new_count);
@@ -1290,7 +1292,8 @@ int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_di
     memcpy((void *)new_entry, (void *)entry, sizeof(struct fat_dir_entry));
     _str_to_sfn(name, new_entry->name);
 
-    _create_lfn_entry(dir_ctx_dest, new_index, wname);
+    if (need_lfn)
+        _create_lfn_entry(dir_ctx_dest, new_index, wname);
 
     wr = fat_dir_write_entries(dir_ctx_dest, new_index - new_count + 1, new_count);
     if (wr < sizeof(struct fat_dir_entry))
