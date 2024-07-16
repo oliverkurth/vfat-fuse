@@ -1034,6 +1034,34 @@ bool _name_needs_lfn(const char *name)
     return false;
 }
 
+static
+bool _allocate_sfn(struct fat_dir_context *dir_ctx, const char *name, char *result)
+{
+    int i, p;
+    char buf[12];
+
+    _str_to_sfn(name, buf);
+
+    for(p = 0; p < dir_ctx->num_entries; p++) {
+        char ntail[7];
+        int nt_len = snprintf(ntail, sizeof(ntail), "~%d", p);
+        memcpy(buf + 8 - nt_len, ntail, nt_len);
+        for (i = 0; dir_ctx->entries[i].name[0]; i++) {
+            if (!fat_entry_is_valid(&dir_ctx->entries[i]))
+                continue;
+            if (strncmp(dir_ctx->entries[i].name, buf, 11) == 0)
+                break;
+        }
+        if (!dir_ctx->entries[i].name[0])
+            break;
+    }
+    if (p == dir_ctx->num_entries)
+        return false;
+    memcpy(result, buf, 11);
+    return true;
+}
+
+static
 int _create_lfn_entry(struct fat_dir_context *dir_ctx, int index, const wchar_t *wname)
 {
     int i;
@@ -1136,10 +1164,12 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
     ssize_t wr = 0;
     int index, count = 1;
     wchar_t wname[strlen(name)+1];
+    bool need_lfn = false;
 
     if (_name_needs_lfn(name)) {
         str_to_wstr(name, wname);
         count += (wcslen(wname)-1)/13+1;
+        need_lfn = true;
     }
 
     index = fat_dir_allocate_entries(dir_ctx, count);
@@ -1149,7 +1179,12 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
 
     memset((void *)entry, 0, sizeof(struct fat_dir_entry));
-    _str_to_sfn(name, entry->name);
+
+    if (need_lfn) {
+        check_cond(_allocate_sfn(dir_ctx, name, entry->name));
+    } else
+        _str_to_sfn(name, entry->name);
+
     entry->attr = attr;
     entry->ntres = 0;
 
@@ -1216,20 +1251,27 @@ error:
 /* rename a file in same dir */
 int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
 {
+    int rc = 0;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     ssize_t wr;
     int old_count = 1, new_count = 1, new_index = index;
     wchar_t wname[strlen(name)+1];
+    bool need_lfn = false;
 
     old_count += _fat_dir_count_lfn_entries(dir_ctx, index);
 
     if (_name_needs_lfn(name)) {
         str_to_wstr(name, wname);
         new_count += (wcslen(wname)-1)/13+1;
+        need_lfn = true;
     }
 
     if (old_count >= new_count) {
-        _str_to_sfn(name, entry->name);
+        if (need_lfn) {
+            check_cond(_allocate_sfn(dir_ctx, name, entry->name));
+        } else
+            _str_to_sfn(name, entry->name);
+
         for (int i = 0; i < old_count - 1; i++) {
             dir_ctx->entries[index - i - 1].name[0] = 0xe5;
         }
@@ -1247,7 +1289,10 @@ int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char 
         struct fat_dir_entry *new_entry = &dir_ctx->entries[new_index];
 
         memcpy((void *)new_entry, (void *)entry, sizeof(struct fat_dir_entry));
-        _str_to_sfn(name, new_entry->name);
+        if (need_lfn) {
+            check_cond(_allocate_sfn(dir_ctx, name, new_entry->name));
+        } else
+            _str_to_sfn(name, new_entry->name);
 
         _create_lfn_entry(dir_ctx, new_index, wname);
 
@@ -1264,11 +1309,14 @@ int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char 
     }
 
     return new_index;
+error:
+    return rc;
 }
 
 /* move a file to another directory */
 int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_dir_context *dir_ctx_dest, const char *name)
 {
+    int rc;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
     ssize_t wr;
     int old_count = 1, new_count = 1, new_index = index;
@@ -1290,10 +1338,11 @@ int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_di
     struct fat_dir_entry *new_entry = &dir_ctx_dest->entries[new_index];
 
     memcpy((void *)new_entry, (void *)entry, sizeof(struct fat_dir_entry));
-    _str_to_sfn(name, new_entry->name);
-
-    if (need_lfn)
+    if (need_lfn) {
+        check_cond(_allocate_sfn(dir_ctx, name, new_entry->name));
         _create_lfn_entry(dir_ctx_dest, new_index, wname);
+    } else
+        _str_to_sfn(name, new_entry->name);
 
     wr = fat_dir_write_entries(dir_ctx_dest, new_index - new_count + 1, new_count);
     if (wr < sizeof(struct fat_dir_entry))
@@ -1307,6 +1356,8 @@ int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_di
         return -1;
 
     return new_index;
+error:
+    return rc;
 }
 
 int far_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr)
