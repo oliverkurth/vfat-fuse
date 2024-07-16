@@ -272,6 +272,31 @@ def test_rename():
     assert content == content_read
 
 
+def test_move():
+    olddir = os.path.join(MNT_DIR, "olddir")
+    newdir = os.path.join(MNT_DIR, "newdir")
+    oldpath = os.path.join(olddir, "oldname.txt")
+    newpath = os.path.join(newdir, "newname.txt")
+
+    content = "something to rename"
+
+    os.makedirs(olddir)
+    os.makedirs(newdir)
+
+    with open(oldpath, "wt") as f:
+        f.write(content)
+    assert os.path.exists(oldpath)
+
+    os.rename(oldpath, newpath)
+    assert not os.path.exists(oldpath)
+    assert os.path.exists(newpath)
+
+    with open(newpath, "rt") as f:
+        content_read = f.read()
+
+    assert content == content_read
+
+
 def test_statfs():
     filename = os.path.join(MNT_DIR, "statvfs.txt")
     write_file(filename, "something from client")
