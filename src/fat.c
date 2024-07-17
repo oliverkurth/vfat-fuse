@@ -976,24 +976,38 @@ error:
     return rc;
 }
 
+const char *specials = "$%'-_@~`!(){}^#&";
+
 /* convert a filename to a SFN entry. Does not NUL terminate */
-static char *_str_to_sfn(const char *name, char *buf)
+static
+char *_str_to_sfn(const char *name, char *buf)
 {
     char *p;
     const char *q = name;
 
     p = buf;
-    while (*q && *q != '.')
-        if (p - buf < 8)
-            *p++ = toupper(*q++);
-        else
-            q++;
+    while (*q && (*q == '.' || *q == ' '))
+        q++;
+    while (*q && *q != '.' && !isspace(*q)) {
+        if (p - buf < 8) {
+            if(isalnum(*q) || *q >= 0x80 || (strchr(specials, *q) != NULL))
+                *p++ = toupper(*q);
+            else
+                *p++ = '_';
+        }
+        q++;
+    }
     if (*q == '.') {
         while(p - buf < 8)
             *p++ = ' ';
         q++;
-        while(*q && (p - buf < 11))
-            *p++ = toupper(*q++);
+        while(*q && (p - buf < 11)) {
+            if(isalnum(*q) || *q >= 0x80 || (strchr(specials, *q) != NULL))
+                *p++ = toupper(*q);
+            else
+                *p++ = '_';
+            q++;
+        }
     }
     while(p - buf < 11)
         *p++ = ' ';
@@ -1001,11 +1015,11 @@ static char *_str_to_sfn(const char *name, char *buf)
     return buf;
 }
 
+static
 bool _name_needs_lfn(const char *name)
 {
     const char *p = name;
     const char *dot = NULL;
-    const char *specials = "$%'-_@~`!(){}^#&";
 
     while(*p) {
         if ((dot == NULL) && p - 8 > name)
@@ -1040,12 +1054,17 @@ bool _allocate_sfn(struct fat_dir_context *dir_ctx, const char *name, char *resu
     int i, p;
     char buf[12];
 
-    _str_to_sfn(name, buf);
-
     for(p = 0; p < dir_ctx->num_entries; p++) {
+        _str_to_sfn(name, buf);
+
         char ntail[7];
+        char *q = buf;
         int nt_len = snprintf(ntail, sizeof(ntail), "~%d", p);
-        memcpy(buf + 8 - nt_len, ntail, nt_len);
+
+        while (!isspace(*q) && buf - q + 8 > nt_len)
+            q++;
+
+        memcpy(q, ntail, nt_len);
         for (i = 0; dir_ctx->entries[i].name[0]; i++) {
             if (!fat_entry_is_valid(&dir_ctx->entries[i]))
                 continue;
