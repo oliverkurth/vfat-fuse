@@ -172,12 +172,65 @@ static void test_dir_scan_stops_at_num_entries(void)
     free(ctx.sub_dirs);
 }
 
+/* ---- issue 5: divide-by-zero on a malformed boot sector ---- */
+
+/* writes a minimal-but-otherwise-plausible FAT16 boot sector + extension
+ * to a fresh temp file and returns its fd, positioned at offset 0 */
+static int _make_boot_sector_fd(uint16_t bytes_per_sector, uint8_t sectors_per_cluster)
+{
+    struct fat_boot_sector bs = {0};
+    struct fat_boot_sector_ext16 ext = {0};
+
+    bs.bytes_per_sector = bytes_per_sector;
+    bs.sectors_per_cluster = sectors_per_cluster;
+    bs.reserved_sectors_count = 1;
+    bs.num_fats = 1;
+    bs.root_entry_count = 16;
+    bs.total_sectors16 = 1000;
+    bs.fat_size16 = 4;
+
+    FILE *f = tmpfile();
+    int fd = dup(fileno(f));
+    fwrite(&bs, sizeof(bs), 1, f);
+    fwrite(&ext, sizeof(ext), 1, f);
+    fflush(f);
+    fclose(f); /* fd survives the dup() above */
+    /* big enough for init_fat_context() to pread() the (empty/zero) fat
+     * table without a short read, regardless of bytes_per_sector/fat_size16 */
+    ftruncate(fd, 1 << 20);
+    lseek(fd, 0, SEEK_SET);
+    return fd;
+}
+
+static void test_malformed_boot_sector_rejected(void)
+{
+    int fd = _make_boot_sector_fd(0, 4); /* bytes_per_sector == 0 */
+    assert(init_fat_context(fd) == NULL);
+    close(fd);
+
+    fd = _make_boot_sector_fd(512, 0); /* sectors_per_cluster == 0 */
+    assert(init_fat_context(fd) == NULL);
+    close(fd);
+
+    fd = _make_boot_sector_fd(511, 4); /* not a power of two */
+    assert(init_fat_context(fd) == NULL);
+    close(fd);
+
+    /* a plausible, valid boot sector must still be accepted */
+    fd = _make_boot_sector_fd(512, 4);
+    struct fat_context *ctx = init_fat_context(fd);
+    assert(ctx != NULL);
+    free_fat_context(ctx);
+    close(fd);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
     RUN(test_cluster_bounds_checked);
     RUN(test_cyclic_chain_does_not_hang);
     RUN(test_dir_scan_stops_at_num_entries);
+    RUN(test_malformed_boot_sector_rejected);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

@@ -44,6 +44,23 @@ struct fat_context *init_fat_context(int fd)
     if (rc != sizeof(ctx->bootsector_ext))
         goto error;
 
+    /* bytes_per_sector and sectors_per_cluster are used as divisors below;
+     * a corrupt/malicious boot sector with either set to 0 would otherwise
+     * crash with a division by zero before a single file is accessed. Both
+     * must be a power of two per the FAT spec. */
+    if (ctx->bootsector.bytes_per_sector == 0 ||
+        (ctx->bootsector.bytes_per_sector & (ctx->bootsector.bytes_per_sector - 1)) != 0) {
+        fprintf(stderr, "init_fat_context: invalid bytes_per_sector (%u)\n",
+                ctx->bootsector.bytes_per_sector);
+        goto error;
+    }
+    if (ctx->bootsector.sectors_per_cluster == 0 ||
+        (ctx->bootsector.sectors_per_cluster & (ctx->bootsector.sectors_per_cluster - 1)) != 0) {
+        fprintf(stderr, "init_fat_context: invalid sectors_per_cluster (%u)\n",
+                ctx->bootsector.sectors_per_cluster);
+        goto error;
+    }
+
     int64_t fat_start_sector = ctx->bootsector.reserved_sectors_count;
 
     int32_t total_sectors = ctx->bootsector.total_sectors16;
