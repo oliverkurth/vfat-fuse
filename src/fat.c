@@ -200,6 +200,39 @@ uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
     }
 }
 
+/*
+ * A legitimate cluster chain can never visit more clusters than exist in
+ * the filesystem. Cap chain-walking loops at this length so a crafted
+ * image with a cyclic chain (e.g. cluster A -> B -> A) makes traversal
+ * fail cleanly instead of looping forever.
+ */
+static int32_t _fat_max_chain_length(struct fat_context *fat_ctx)
+{
+    return fat_ctx->fat_entries;
+}
+
+/* walks the chain starting at 'first' and returns its last cluster, or -1
+ * if the chain is longer than the filesystem could possibly contain
+ * (i.e. a cycle). Returns 0 if 'first' is 0 (no cluster allocated yet). */
+int32_t fat_chain_last_cluster(struct fat_context *fat_ctx, int32_t first)
+{
+    int32_t cluster = first;
+    int32_t remaining = _fat_max_chain_length(fat_ctx);
+
+    if (!cluster)
+        return 0;
+
+    while (!fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, cluster))) {
+        cluster = fat_next_cluster(fat_ctx, cluster);
+        if (--remaining <= 0) {
+            fprintf(stderr, "fat_chain_last_cluster: chain longer than filesystem "
+                            "(possible cycle starting at cluster %d)\n", first);
+            return -1;
+        }
+    }
+    return cluster;
+}
+
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
 {
     int32_t count = 0, i;
@@ -301,6 +334,7 @@ int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entr
 {
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
     int32_t cluster;
+    int32_t max_chain = _fat_max_chain_length(fat_ctx);
 
     if (pos > entry->filesize)
         return -1;
@@ -309,6 +343,8 @@ int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entr
         pos >= bytes_per_cluster && cluster && !fat_cluster_is_eoc(fat_ctx, cluster);
         cluster = fat_next_cluster(fat_ctx, cluster)) {
             pos -= bytes_per_cluster;
+            if (--max_chain <= 0)
+                return -1;
     }
 
     if (fat_cluster_is_eoc(fat_ctx, cluster))
@@ -381,6 +417,7 @@ ssize_t fat_file_pread_from_cluster(struct fat_context *fat_ctx, int32_t cluster
 {
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+    int32_t max_chain = _fat_max_chain_length(fat_ctx);
 
     while ((len > 0) && (cluster > 0) && !fat_cluster_is_eoc(fat_ctx, cluster)) {
         int64_t sector = fat_get_sector_from_cluster(fat_ctx, cluster);
@@ -404,8 +441,14 @@ ssize_t fat_file_pread_from_cluster(struct fat_context *fat_ctx, int32_t cluster
         ptr += read_len;
         len -= read_len;
         pos += read_len;
-        if (skip + read_len >= bytes_per_cluster)
+        if (skip + read_len >= bytes_per_cluster) {
             cluster = fat_next_cluster(fat_ctx, cluster);
+            if (--max_chain <= 0) {
+                fprintf(stderr, "fat_file_pread_from_cluster: cluster chain longer than "
+                                "filesystem (possible cycle)\n");
+                return ptr - (uint8_t *)buf;
+            }
+        }
     }
     return ptr - (uint8_t *)buf;
 }
@@ -435,10 +478,16 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
     int rc = 0;
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
+    int32_t max_chain = _fat_max_chain_length(fat_ctx);
 
     while (pos >= bytes_per_cluster && !fat_cluster_is_eoc(fat_ctx, cluster)) {
         cluster = fat_next_cluster(fat_ctx, cluster);
         pos -= bytes_per_cluster;
+        if (--max_chain <= 0) {
+            fprintf(stderr, "fat_file_pwrite_to_cluster: cluster chain longer than "
+                            "filesystem (possible cycle)\n");
+            return -1;
+        }
     }
 
     if (fat_cluster_is_eoc(fat_ctx, cluster)) {
@@ -468,8 +517,14 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
         ptr += write_len;
         len -= write_len;
         pos += write_len;
-        if (skip + write_len >= bytes_per_cluster)
+        if (skip + write_len >= bytes_per_cluster) {
             cluster = fat_next_cluster(fat_ctx, cluster);
+            if (--max_chain <= 0) {
+                fprintf(stderr, "fat_file_pwrite_to_cluster: cluster chain longer than "
+                                "filesystem (possible cycle)\n");
+                return ptr - (uint8_t *)buf;
+            }
+        }
     }
     return ptr - (uint8_t *)buf;
 error:
@@ -513,10 +568,8 @@ ssize_t fat_dir_file_entry_extend(struct fat_dir_context *dir_ctx, int index, si
         uint8_t buf0[bytes_per_cluster];
         memset(buf0, 0, bytes_per_cluster);
 
-        int32_t last_cluster;
-        for (last_cluster = fat_dir_entry_get_cluster(entry);
-             last_cluster && !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
-             last_cluster = fat_next_cluster(fat_ctx, last_cluster));
+        int32_t last_cluster = fat_chain_last_cluster(fat_ctx, fat_dir_entry_get_cluster(entry));
+        check_cond(last_cluster >= 0);
 
         if (last_cluster == 0) {
             /* no cluster yet for entry */
@@ -622,11 +675,17 @@ ssize_t fat_dir_read(struct fat_dir_context *ctx)
     struct fat_context *fat_ctx = ctx->fat_ctx;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
     int32_t cluster, num_clusters = 0;
+    int32_t max_chain = _fat_max_chain_length(fat_ctx);
 
     for(cluster = ctx->first_cluster;
         cluster && !fat_cluster_is_eoc(fat_ctx, cluster);
         cluster = fat_next_cluster(fat_ctx, cluster)) {
             num_clusters++;
+            if (num_clusters > max_chain) {
+                fprintf(stderr, "fat_dir_read: cluster chain longer than filesystem "
+                                "(possible cycle starting at cluster %d)\n", ctx->first_cluster);
+                return -1;
+            }
     }
     ssize_t dir_size = num_clusters * bytes_per_cluster;
 
@@ -1194,12 +1253,11 @@ int fat_dir_allocate_entries(struct fat_dir_context *dir_ctx, int count)
         /* 2^16 is the max entries */
         return -1;
 
-    int32_t last_cluster;
     size_t bytes_per_cluster = ((size_t)fat_ctx->bootsector.bytes_per_sector * (size_t)fat_ctx->bootsector.sectors_per_cluster);
 
-    for (last_cluster = dir_ctx->first_cluster;
-         !fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, last_cluster));
-         last_cluster = fat_next_cluster(fat_ctx, last_cluster));
+    int32_t last_cluster = fat_chain_last_cluster(fat_ctx, dir_ctx->first_cluster);
+    if (last_cluster < 0)
+        return -1;
 
     int32_t new_cluster = fat_allocate_cluster(fat_ctx, 0);
     fat_write_fat_cluster(fat_ctx, new_cluster);

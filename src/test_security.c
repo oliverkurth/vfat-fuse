@@ -95,10 +95,59 @@ static void test_cluster_bounds_checked(void)
     free(fat_ctx);
 }
 
+/* ---- issue 3: no cycle detection when walking FAT chains ---- */
+
+static void _timeout_handler(int sig)
+{
+    (void) sig;
+    /* write(2) instead of fprintf: async-signal-safe */
+    const char msg[] = "TIMEOUT - infinite loop while walking a cyclic FAT chain\n";
+    write(2, msg, sizeof(msg) - 1);
+    _exit(1);
+}
+
+static void test_cyclic_chain_does_not_hang(void)
+{
+    /* FAT16 table where cluster 2 -> 3 -> 2: a cycle with no EOC marker */
+    int16_t table[8] = {0};
+    struct fat_context *fat_ctx = _make_fat16_context(table, 8);
+    fat_ctx->bootsector.bytes_per_sector = 512;
+    fat_ctx->bootsector.sectors_per_cluster = 1;
+    fat_ctx->fd = -1; /* fat_dir_read's cluster-counting loop never reaches I/O
+                        * when it (correctly) bails out early on the cycle */
+
+    table[2] = 3;
+    table[3] = 2;
+
+    struct fat_dir_context dir_ctx = {0};
+    dir_ctx.fat_ctx = fat_ctx;
+    dir_ctx.first_cluster = 2;
+
+    struct sigaction sa = {0};
+    sa.sa_handler = _timeout_handler;
+    sigaction(SIGALRM, &sa, NULL);
+
+    alarm(5);
+    ssize_t rd = fat_dir_read(&dir_ctx);
+    alarm(0);
+
+    assert(rd < 0); /* cycle detected and reported, not an infinite loop */
+
+    /* same cycle, reached via the "find last cluster" helper used by
+     * fat_dir_file_entry_extend()/fat_dir_allocate_entries() */
+    alarm(5);
+    int32_t last = fat_chain_last_cluster(fat_ctx, 2);
+    alarm(0);
+    assert(last == -1);
+
+    free(fat_ctx);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
     RUN(test_cluster_bounds_checked);
+    RUN(test_cyclic_chain_does_not_hang);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;
