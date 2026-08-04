@@ -250,7 +250,7 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, "..", NULL, 0, 0);
     }
 
-    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+    for(i = 0; i < dir_ctx->num_entries && dir_ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &dir_ctx->entries[i];
         if (fat_entry_is_valid(entry)) {
             char name[256];

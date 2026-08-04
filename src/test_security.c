@@ -143,11 +143,41 @@ static void test_cyclic_chain_does_not_hang(void)
     free(fat_ctx);
 }
 
+/* ---- issue 4: unbounded directory-entry scan loops ---- */
+
+static void test_dir_scan_stops_at_num_entries(void)
+{
+    /* every slot is a valid-looking, non-zero, non-matching entry: no NUL
+     * terminator anywhere in the array (as a crafted image could produce) */
+    const int32_t N = 4;
+    struct fat_dir_entry *entries = calloc(N, sizeof(struct fat_dir_entry));
+    struct fat_dir_context ctx = {0};
+    int i;
+
+    for (i = 0; i < N; i++) {
+        memset(entries[i].name, 'A' + i, 11); /* non-zero, no LFN */
+        entries[i].attr = FAT_ATTR_ARCHIVE;
+    }
+
+    ctx.entries = entries;
+    ctx.num_entries = N;
+    ctx.sub_dirs = calloc(N, sizeof(struct fat_dir_context *));
+
+    /* none of these must read entries[N] or beyond */
+    assert(fat_dir_find_entry_index(&ctx, "ZZZZZZZZ.ZZZ") == -1);
+    assert(fat_dir_is_empty(&ctx) == false);
+    assert(fat_dir_context_by_path(&ctx, "ZZZZZZZZ.ZZZ") == NULL);
+
+    free(entries);
+    free(ctx.sub_dirs);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
     RUN(test_cluster_bounds_checked);
     RUN(test_cyclic_chain_does_not_hang);
+    RUN(test_dir_scan_stops_at_num_entries);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

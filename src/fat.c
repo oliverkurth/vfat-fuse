@@ -944,7 +944,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
     strsep(&path1, "/");
 
     int i;
-    for (i = 0; ctx->entries[i].name[0]; i++) {
+    for (i = 0; i < ctx->num_entries && ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
         if (fat_entry_is_valid(entry)) {
             if (fat_name_matches_entry(ctx, entry, path_copy)) {
@@ -972,7 +972,7 @@ int fat_dir_find_entry_index(struct fat_dir_context *ctx, const char *name)
         fat_dir_read(ctx);
 
     int i;
-    for (i = 0; ctx->entries[i].name[0]; i++) {
+    for (i = 0; i < ctx->num_entries && ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &ctx->entries[i];
         if (fat_entry_is_valid(entry)) {
             if (fat_name_matches_entry(ctx, entry, name))
@@ -1010,7 +1010,7 @@ struct fat_dir_context *fat_dir_find_dir_context(struct fat_dir_context *ctx, co
 bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
 {
     int i;
-    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+    for(i = 0; i < dir_ctx->num_entries && dir_ctx->entries[i].name[0]; i++) {
         if (fat_entry_is_valid(&dir_ctx->entries[i])) {
             char sfn[FAT_SFN_PRETTY_SIZE];
             fat_file_sfn_pretty(&dir_ctx->entries[i], sfn);
@@ -1176,13 +1176,18 @@ bool _allocate_sfn(struct fat_dir_context *dir_ctx, const char *name, char *resu
             q++;
 
         memcpy(q, ntail, nt_len);
-        for (i = 0; dir_ctx->entries[i].name[0]; i++) {
+        bool collision = false;
+        for (i = 0; i < dir_ctx->num_entries && dir_ctx->entries[i].name[0]; i++) {
             if (!fat_entry_is_valid(&dir_ctx->entries[i]))
                 continue;
-            if (strncmp(dir_ctx->entries[i].name, buf, 11) == 0)
+            if (strncmp(dir_ctx->entries[i].name, buf, 11) == 0) {
+                collision = true;
                 break;
+            }
         }
-        if (!dir_ctx->entries[i].name[0])
+        if (!collision)
+            /* either we hit an empty slot, or scanned every existing entry
+             * without a match: 'buf' is free either way */
             break;
     }
     if (p == dir_ctx->num_entries)
