@@ -728,7 +728,7 @@ wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, 
         return NULL;
     }
 
-    char sfn[12];
+    char sfn[FAT_SFN_PRETTY_SIZE];
     fat_file_sfn_pretty(entry, sfn);
 
     for (i = 0; (struct fat_dir_entry *)lfn_entry >= ctx->entries; i++, lfn_entry--) {
@@ -793,7 +793,7 @@ bool fat_name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *e
             matched = true;
     }
     if (!matched) {
-        char sfn_pretty[12];
+        char sfn_pretty[FAT_SFN_PRETTY_SIZE];
         fat_file_sfn_pretty(entry, sfn_pretty);
         if (strcasecmp(name, sfn_pretty) == 0)
             matched = true;
@@ -901,7 +901,7 @@ bool fat_dir_is_empty(struct fat_dir_context *dir_ctx)
     int i;
     for(i = 0; dir_ctx->entries[i].name[0]; i++) {
         if (fat_entry_is_valid(&dir_ctx->entries[i])) {
-            char sfn[13];
+            char sfn[FAT_SFN_PRETTY_SIZE];
             fat_file_sfn_pretty(&dir_ctx->entries[i], sfn);
             if (strcmp(sfn, ".") == 0 || strcmp(sfn, "..") == 0)
                 continue;

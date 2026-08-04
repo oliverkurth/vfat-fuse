@@ -1,21 +1,26 @@
 SRC_DUMP := fat.c dump.c
 SRC_FUSE := fat.c fat-fuse.c
+SRC_TEST := fat.c test_security.c
 
 OUTPUTDIR := ../build
 
 EXE_DUMP := $(OUTPUTDIR)/vfat-dump
 EXE_FUSE := $(OUTPUTDIR)/vfat-fuse
+EXE_TEST := $(OUTPUTDIR)/test-security
 
 PREFIX ?= /usr/local
 
 CC := gcc
 CFLAGS_DUMP := -Wall -O2 -g $(CFLAGS)
 CFLAGS_FUSE := -Wall -O2 -g $(CFLAGS) $$(pkg-config fuse3 --cflags)
+CFLAGS_TEST := -Wall -O0 -g -fsanitize=address,undefined $(CFLAGS)
 LDFLAGS_DUMP := $(LDFLAGS)
 LDFLAGS_FUSE := $(LDFLAGS) $$(pkg-config fuse3 --libs)
+LDFLAGS_TEST := $(LDFLAGS) -fsanitize=address,undefined
 
 OBJS_DUMP := $(addprefix $(OUTPUTDIR)/, $(SRC_DUMP:%.c=%.o))
 OBJS_FUSE := $(addprefix $(OUTPUTDIR)/, $(SRC_FUSE:%.c=%.o))
+OBJS_TEST := $(addprefix $(OUTPUTDIR)/, $(SRC_TEST:%.c=%.san.o))
 
 default: all
 
@@ -27,6 +32,9 @@ $(EXE_DUMP): $(OBJS_DUMP) $(OUTPUTDIR)
 $(EXE_FUSE): $(OBJS_FUSE) $(OUTPUTDIR)
 	$(CC) -o $@ $(OBJS_FUSE) $(LDFLAGS_FUSE)
 
+$(EXE_TEST): $(OBJS_TEST) | $(OUTPUTDIR)
+	$(CC) -o $@ $(OBJS_TEST) $(LDFLAGS_TEST)
+
 $(OUTPUTDIR):
 	mkdir -p $(OUTPUTDIR)
 
@@ -36,8 +44,16 @@ $(OUTPUTDIR)/%.o: %.c | $(OUTPUTDIR)
 $(OUTPUTDIR)/fat-fuse.o: fat-fuse.c | $(OUTPUTDIR)
 	$(CC) $(CFLAGS_FUSE) -c -o $@ $<
 
+$(OUTPUTDIR)/%.san.o: %.c | $(OUTPUTDIR)
+	$(CC) $(CFLAGS_TEST) -c -o $@ $<
+
+test: $(EXE_TEST)
+	$(EXE_TEST)
+
 install:
 	mkdir -p $(DESTDIR)/$(PREFIX)/bin && cp $(EXE_DUMP) $(EXE_FUSE) $(DESTDIR)/$(PREFIX)/bin/
 
 clean:
 	rm -rf $(OUTPUTDIR)
+
+.PHONY: test

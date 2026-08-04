@@ -191,7 +191,7 @@ void list_dir(struct fat_dir_context *dir_ctx)
 
 void print_attr(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 {
-    char sfn_pretty[12];
+    char sfn_pretty[FAT_SFN_PRETTY_SIZE];
     fat_file_sfn_pretty(entry, sfn_pretty);
     printf("     sfn: %s\n", sfn_pretty);
 

@@ -115,6 +115,9 @@ struct fat_fsinfo {
 #define FAT_LFN_LAST_LONG_ENTRY 0x40
 #define FAT_LFN_SEQ_MASK 0x3f
 
+/* fat_file_sfn_pretty() writes up to 8 base chars + '.' + 3 ext chars + NUL */
+#define FAT_SFN_PRETTY_SIZE 13
+
 struct fat_context {
     struct fat_boot_sector bootsector;
     union {
@@ -190,6 +193,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
 bool fat_entry_is_valid(struct fat_dir_entry *entry);
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
 wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size);
+bool fat_name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry, const char *name);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);
 time_t fat_time(struct fat_dir_entry *entry, int type);
 void fat_time_to_fat(time_t t, __le16 *pdate, __le16 *ptime);
