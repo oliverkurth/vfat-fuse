@@ -88,6 +88,7 @@ struct fat_context *init_fat_context(int fd)
 
         ctx->data_start_sector = fat_start_sector + fat_sectors;
         ctx->type = FAT_TYPE32;
+        ctx->fat_entries = (ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector) / sizeof(uint32_t);
 
         ctx->fs_info = malloc(sizeof(struct fat_fsinfo));
 
@@ -117,6 +118,12 @@ struct fat_context *init_fat_context(int fd)
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
         ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
+
+        if (ctx->type == FAT_TYPE12)
+            /* fat12 is a raw byte array; cluster N lives at byte N+N/2 */
+            ctx->fat_entries = ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector;
+        else
+            ctx->fat_entries = (ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector) / sizeof(uint16_t);
     }
     ctx->fd = fd;
 
@@ -142,8 +149,40 @@ void free_fat_context(struct fat_context *ctx)
     }
 }
 
+/*
+ * cluster numbers are read straight from (untrusted) on-disk directory
+ * entries; make sure they fall within the fat table that was actually
+ * loaded into memory before using them as an array index.
+ */
+bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster)
+{
+    if (cluster < 2)
+        return false;
+    if (fat_ctx->type == FAT_TYPE12)
+        return (cluster + cluster / 2 + 1) < (uint32_t)fat_ctx->fat_entries;
+    return cluster < (uint32_t)fat_ctx->fat_entries;
+}
+
+/* an out-of-range cluster is treated as an immediate end-of-chain so that
+ * callers/traversals stop cleanly instead of reading/writing out of bounds */
+static uint32_t _fat_eoc_sentinel(struct fat_context *fat_ctx)
+{
+    if (fat_ctx->type == FAT_TYPE32)
+        return 0x0fffffff;
+    else if (fat_ctx->type == FAT_TYPE16)
+        return 0xffff;
+    else
+        return 0xfff;
+}
+
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
+    if (!fat_cluster_in_range(fat_ctx, cluster)) {
+        fprintf(stderr, "fat_next_cluster: cluster %u out of range (fat_entries=%d)\n",
+                cluster, fat_ctx->fat_entries);
+        return _fat_eoc_sentinel(fat_ctx);
+    }
+
     if (fat_ctx->type == FAT_TYPE32)
         return fat_ctx->fat32[cluster] & 0x0fffffff;
     else if (fat_ctx->type == FAT_TYPE16)
@@ -229,6 +268,12 @@ int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster)
     ssize_t wr = 0;
     int i;
 
+    if (!fat_cluster_in_range(fat_ctx, cluster)) {
+        fprintf(stderr, "fat_write_fat_cluster: cluster %u out of range (fat_entries=%d)\n",
+                cluster, fat_ctx->fat_entries);
+        return -1;
+    }
+
     if (fat_ctx->type == FAT_TYPE32) {
         offset += cluster * sizeof(uint32_t);
         for (i = 0; i < fat_ctx->bootsector.num_fats; i++) {
@@ -275,6 +320,13 @@ int32_t fat_find_cluster(struct fat_context *fat_ctx, struct fat_dir_entry *entr
 uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t value)
 {
     uint32_t old_value;
+
+    if (!fat_cluster_in_range(fat_ctx, cluster)) {
+        fprintf(stderr, "fat_set_cluster: cluster %u out of range (fat_entries=%d)\n",
+                cluster, fat_ctx->fat_entries);
+        return _fat_eoc_sentinel(fat_ctx);
+    }
+
     if (fat_ctx->type == FAT_TYPE32) {
         old_value = fat_ctx->fat32[cluster] & 0x0fffffff;
         fat_ctx->fat32[cluster] = value;

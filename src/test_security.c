@@ -55,9 +55,50 @@ static void test_sfn_pretty_full_8dot3_no_overflow(void)
     assert(fat_name_matches_entry(&ctx, &entries[1], "nope.txt") == false);
 }
 
+/* ---- issue 2: unvalidated cluster numbers used as raw FAT indices ---- */
+
+static struct fat_context *_make_fat16_context(int16_t *table, int32_t entries)
+{
+    struct fat_context *fat_ctx = calloc(1, sizeof(struct fat_context));
+    fat_ctx->type = FAT_TYPE16;
+    fat_ctx->fat16 = table;
+    fat_ctx->fat_entries = entries;
+    fat_ctx->num_clusters = entries - 2;
+    return fat_ctx;
+}
+
+static void test_cluster_bounds_checked(void)
+{
+    /* a tiny 8-entry FAT16 table: clusters 0/1 reserved, 2..7 usable */
+    int16_t table[8] = {0};
+    struct fat_context *fat_ctx = _make_fat16_context(table, 8);
+
+    table[2] = 3;
+    table[3] = 0xffff; /* EOC */
+
+    /* in-range clusters still behave correctly */
+    assert(fat_next_cluster(fat_ctx, 2) == 3);
+    assert(fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, 3)));
+    assert(fat_cluster_in_range(fat_ctx, 2) == true);
+    assert(fat_cluster_in_range(fat_ctx, 7) == true);
+
+    /* cluster numbers taken from a crafted/corrupt directory entry, far
+     * outside the loaded fat table, must not be read/written out of bounds */
+    assert(fat_cluster_in_range(fat_ctx, 1000000) == false);
+    assert(fat_cluster_in_range(fat_ctx, 0) == false);
+    assert(fat_cluster_in_range(fat_ctx, 1) == false);
+
+    assert(fat_cluster_is_eoc(fat_ctx, fat_next_cluster(fat_ctx, 1000000)));
+    assert(fat_cluster_is_eoc(fat_ctx, fat_set_cluster(fat_ctx, 1000000, 42)));
+    assert(fat_write_fat_cluster(fat_ctx, 1000000) == -1);
+
+    free(fat_ctx);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
+    RUN(test_cluster_bounds_checked);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

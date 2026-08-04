@@ -140,6 +140,11 @@ struct fat_context {
     int64_t rootdir16_sector;
     int64_t data_start_sector;
     int32_t num_clusters;
+
+    /* size of the loaded fat32/fat16 array in entries, or of the fat12
+     * byte array in bytes; used to bounds-check cluster numbers taken
+     * from (untrusted) on-disk directory entries before indexing it */
+    int32_t fat_entries;
 };
 
 struct fat_dir_context {
@@ -165,6 +170,9 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
 uint32_t fat_first_cluster(struct fat_context *fat_ctx);
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster);
+bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster);
+uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t value);
+int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 void free_fat_file_context(struct fat_file_context *ctx);
