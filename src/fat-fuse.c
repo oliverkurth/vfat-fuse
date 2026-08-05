@@ -651,6 +651,8 @@ int main(int argc, char *argv[])
         printf("mounting read-only\n");
     }
 
+    fatfuse_force_singlethreaded(&args);
+
     argc_saved = args.argc;
     argv_saved = args.argv;
 

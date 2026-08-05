@@ -249,6 +249,38 @@ static void test_open_check_rejects_missing_entry(void)
     assert(fatfuse_open_check(&entry, O_WRONLY, 0) == -EACCES);
 }
 
+/* ---- issue 8: no locking around shared state under multi-threaded FUSE ---- */
+
+static int _count_dash_s(struct fuse_args *args)
+{
+    int i, count = 0;
+    for (i = 0; i < args->argc; i++) {
+        if (strcmp(args->argv[i], "-s") == 0)
+            count++;
+    }
+    return count;
+}
+
+static void test_force_singlethreaded_adds_dash_s_once(void)
+{
+    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
+    fuse_opt_add_arg(&args, "vfat-fuse");
+    fuse_opt_add_arg(&args, "image.img");
+    fuse_opt_add_arg(&args, "/mnt");
+
+    assert(_count_dash_s(&args) == 0);
+
+    fatfuse_force_singlethreaded(&args);
+    assert(_count_dash_s(&args) == 1);
+
+    /* idempotent: calling again (e.g. if the user also passed -s) must
+     * not add a second copy */
+    fatfuse_force_singlethreaded(&args);
+    assert(_count_dash_s(&args) == 1);
+
+    fuse_opt_free_args(&args);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -257,6 +289,7 @@ int main(void)
     RUN(test_dir_scan_stops_at_num_entries);
     RUN(test_malformed_boot_sector_rejected);
     RUN(test_open_check_rejects_missing_entry);
+    RUN(test_force_singlethreaded_adds_dash_s_once);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

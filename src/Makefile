@@ -13,10 +13,10 @@ PREFIX ?= /usr/local
 CC := gcc
 CFLAGS_DUMP := -Wall -O2 -g $(CFLAGS)
 CFLAGS_FUSE := -Wall -O2 -g $(CFLAGS) $$(pkg-config fuse3 --cflags)
-CFLAGS_TEST := -Wall -O0 -g -fsanitize=address,undefined $(CFLAGS)
+CFLAGS_TEST := -Wall -O0 -g -fsanitize=address,undefined $(CFLAGS) $$(pkg-config fuse3 --cflags)
 LDFLAGS_DUMP := $(LDFLAGS)
 LDFLAGS_FUSE := $(LDFLAGS) $$(pkg-config fuse3 --libs)
-LDFLAGS_TEST := $(LDFLAGS) -fsanitize=address,undefined
+LDFLAGS_TEST := $(LDFLAGS) -fsanitize=address,undefined $$(pkg-config fuse3 --libs)
 
 OBJS_DUMP := $(addprefix $(OUTPUTDIR)/, $(SRC_DUMP:%.c=%.o))
 OBJS_FUSE := $(addprefix $(OUTPUTDIR)/, $(SRC_FUSE:%.c=%.o))
@@ -42,6 +42,9 @@ $(OUTPUTDIR)/%.o: %.c | $(OUTPUTDIR)
 	$(CC) $(CFLAGS_DUMP) -c -o $@ $<
 
 $(OUTPUTDIR)/fat-fuse.o: fat-fuse.c | $(OUTPUTDIR)
+	$(CC) $(CFLAGS_FUSE) -c -o $@ $<
+
+$(OUTPUTDIR)/fatfuse_util.o: fatfuse_util.c | $(OUTPUTDIR)
 	$(CC) $(CFLAGS_FUSE) -c -o $@ $<
 
 $(OUTPUTDIR)/%.san.o: %.c | $(OUTPUTDIR)
