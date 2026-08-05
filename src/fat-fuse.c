@@ -3,6 +3,7 @@
 #include <fuse.h>
 #include <fuse_lowlevel.h>
 #include <libgen.h>
+#include <linux/fs.h> /* RENAME_NOREPLACE, RENAME_EXCHANGE */
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -428,8 +429,8 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     if (data->read_only)
         return -EROFS;
 
-    if(_fatfuse_find_entry_by_path(dir_ctx_root, to) != NULL)
-        return -EEXIST;
+    if (flags & RENAME_EXCHANGE)
+        return -EINVAL; /* atomic exchange not supported */
 
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, from);
     if (!dir_ctx) {
@@ -450,6 +451,42 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     if (index < 0){
         fprintf(stderr, "dir not found\n");
         return -ENOENT;
+    }
+    bool src_is_dir = (dir_ctx->entries[index].attr & FAT_ATTR_DIRECTORY) != 0;
+
+    /*
+     * plain rename(2) (no flags) must silently replace an existing
+     * destination, matching POSIX; only RENAME_NOREPLACE should reject it.
+     */
+    struct fat_dir_entry *dest_entry = _fatfuse_find_entry_by_path(dir_ctx_root, to);
+    if (dest_entry != NULL) {
+        if (flags & RENAME_NOREPLACE)
+            return -EEXIST;
+
+        bool dest_is_dir = (dest_entry->attr & FAT_ATTR_DIRECTORY) != 0;
+        if (dest_is_dir && !src_is_dir)
+            return -EISDIR;
+        if (!dest_is_dir && src_is_dir)
+            return -ENOTDIR;
+
+        struct fat_dir_context *dest_dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, to);
+        if (!dest_dir_ctx)
+            return -ENOENT;
+
+        char path_copy_dest[strlen(to) + 1];
+        strcpy(path_copy_dest, to + 1);
+        int dest_index = fat_dir_find_entry_index(dest_dir_ctx, basename(path_copy_dest));
+        if (dest_index < 0)
+            return -ENOENT;
+
+        if (dest_is_dir) {
+            struct fat_dir_context *dest_subdir = fat_dir_get_dir_context(dest_dir_ctx, dest_index);
+            if (!dest_subdir || !fat_dir_is_empty(dest_subdir))
+                return -ENOTEMPTY;
+        }
+
+        if (far_dir_entry_delete(dest_dir_ctx, dest_index) < 0)
+            return -EIO;
     }
 
     char path_copy_base_to[strlen(to) + 1];
