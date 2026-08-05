@@ -1,3 +1,6 @@
+#ifndef FAT_H
+#define FAT_H
+
 #include <asm/byteorder.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -218,3 +221,5 @@ int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int 
 int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name);
 int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_dir_context *dir_ctx_dest, const char *name);
 int far_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr);
+
+#endif /* FAT_H */

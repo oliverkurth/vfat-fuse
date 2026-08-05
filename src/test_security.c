@@ -1,13 +1,15 @@
 /*
- * Regression tests for the security findings in REVIEW.md (issues 1-5).
+ * Regression tests for the findings in REVIEW.md.
  *
- * Built with -fsanitize=address,undefined against fat.c (see the `test`
- * target in Makefile) so that out-of-bounds reads/writes and infinite
- * loops are caught reliably rather than by chance.
+ * Built with -fsanitize=address,undefined against fat.c/fatfuse_util.c
+ * (see the `test` target in Makefile) so that out-of-bounds reads/writes
+ * and infinite loops are caught reliably rather than by chance.
  */
 #define _GNU_SOURCE
 
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +17,7 @@
 #include <unistd.h>
 
 #include "fat.h"
+#include "fatfuse_util.h"
 
 static int tests_run = 0;
 
@@ -224,6 +227,28 @@ static void test_malformed_boot_sector_rejected(void)
     close(fd);
 }
 
+/* ---- issue 7: NULL deref in fatfuse_open() when lookup fails ---- */
+
+static void test_open_check_rejects_missing_entry(void)
+{
+    struct fat_dir_entry entry = {0};
+    entry.attr = FAT_ATTR_ARCHIVE;
+
+    /* the actual bug: a NULL entry (failed lookup) must not be
+     * dereferenced, regardless of the requested access mode */
+    assert(fatfuse_open_check(NULL, O_RDONLY, 0) == -ENOENT);
+    assert(fatfuse_open_check(NULL, O_WRONLY, 0) == -ENOENT);
+
+    /* existing behavior for a resolved entry must be unaffected */
+    assert(fatfuse_open_check(&entry, O_RDONLY, 0) == 0);
+    assert(fatfuse_open_check(&entry, O_WRONLY, 0) == 0);
+    assert(fatfuse_open_check(&entry, O_WRONLY, /*read_only=*/1) == -EROFS);
+
+    entry.attr |= FAT_ATTR_READ_ONLY;
+    assert(fatfuse_open_check(&entry, O_RDONLY, 0) == 0);
+    assert(fatfuse_open_check(&entry, O_WRONLY, 0) == -EACCES);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -231,6 +256,7 @@ int main(void)
     RUN(test_cyclic_chain_does_not_hang);
     RUN(test_dir_scan_stops_at_num_entries);
     RUN(test_malformed_boot_sector_rejected);
+    RUN(test_open_check_rejects_missing_entry);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

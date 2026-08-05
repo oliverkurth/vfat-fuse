@@ -13,6 +13,7 @@
 #include <errno.h>
 
 #include "fat.h"
+#include "fatfuse_util.h"
 
 
 #define check_cond(COND) if(!(COND)) { \
@@ -268,20 +269,11 @@ error:
 
 static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 {
-    (void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
-    struct fat_dir_entry *entry = NULL;
+    struct fat_dir_entry *entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
 
-    entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
-
-    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-        if (entry->attr & FAT_ATTR_READ_ONLY)
-            return -EACCES;
-        if (data->read_only)
-            return -EROFS;
-    }
-    return 0;
+    return fatfuse_open_check(entry, fi->flags & O_ACCMODE, data->read_only);
 }
 
 static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,

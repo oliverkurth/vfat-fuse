@@ -1,6 +1,6 @@
 SRC_DUMP := fat.c dump.c
-SRC_FUSE := fat.c fat-fuse.c
-SRC_TEST := fat.c test_security.c
+SRC_FUSE := fat.c fatfuse_util.c fat-fuse.c
+SRC_TEST := fat.c fatfuse_util.c test_security.c
 
 OUTPUTDIR := ../build
 
