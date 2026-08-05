@@ -1094,6 +1094,13 @@ int far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
     entry->name[0] = 0xe5;
     entry->filesize = 0;
 
+    /* drop any cached sub-directory context for this now-deleted entry;
+     * otherwise it leaks once this index is reused for a new directory */
+    if (dir_ctx->sub_dirs[index]) {
+        free_fat_dir_context(dir_ctx->sub_dirs[index]);
+        dir_ctx->sub_dirs[index] = NULL;
+    }
+
     rc = fat_dir_write_entries(dir_ctx, index, 1);
     check_cond(rc >= 0);
 

@@ -281,6 +281,57 @@ static void test_force_singlethreaded_adds_dash_s_once(void)
     fuse_opt_free_args(&args);
 }
 
+/* ---- issue 9: stale sub_dirs[] cache leaked on delete+reuse ---- */
+
+/* a scratch fd large enough for fat_dir_write_entries()'s pwrite() to
+ * always succeed, regardless of where in it we write */
+static int _make_scratch_fd(void)
+{
+    FILE *f = tmpfile();
+    int fd = dup(fileno(f));
+    fclose(f);
+    ftruncate(fd, 1 << 16);
+    return fd;
+}
+
+static void test_delete_frees_cached_subdir(void)
+{
+    struct fat_dir_entry entries[2] = {0};
+    struct fat_context fat_ctx = {0};
+    struct fat_dir_context ctx = {0};
+
+    fat_ctx.type = FAT_TYPE16;
+    fat_ctx.bootsector.bytes_per_sector = 512;
+    fat_ctx.bootsector.sectors_per_cluster = 1;
+    fat_ctx.bootsector.num_fats = 1;
+    fat_ctx.rootdir16_sector = 0;
+    fat_ctx.fd = _make_scratch_fd();
+
+    memcpy(entries[0].name, "SUBDIR     ", 11);
+    entries[0].attr = FAT_ATTR_DIRECTORY; /* cluster 0: no chain to free */
+
+    ctx.fat_ctx = &fat_ctx;
+    ctx.entries = entries;
+    ctx.num_entries = 2;
+    ctx.sub_dirs = calloc(2, sizeof(struct fat_dir_context *));
+
+    /* a cached sub-directory context for entries[0], as if it had been
+     * looked up earlier via fat_dir_get_dir_context() */
+    struct fat_dir_context *cached = calloc(1, sizeof(struct fat_dir_context));
+    cached->entries = calloc(1, sizeof(struct fat_dir_entry));
+    cached->sub_dirs = calloc(1, sizeof(struct fat_dir_context *));
+    ctx.sub_dirs[0] = cached;
+
+    int rc = far_dir_entry_delete(&ctx, 0);
+    assert(rc >= 0);
+    /* the fix: the stale cache entry must be gone (freed), not just left
+     * dangling for fat_dir_create_entry() to silently overwrite/leak later */
+    assert(ctx.sub_dirs[0] == NULL);
+
+    close(fat_ctx.fd);
+    free(ctx.sub_dirs);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -290,6 +341,7 @@ int main(void)
     RUN(test_malformed_boot_sector_rejected);
     RUN(test_open_check_rejects_missing_entry);
     RUN(test_force_singlethreaded_adds_dash_s_once);
+    RUN(test_delete_frees_cached_subdir);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;
