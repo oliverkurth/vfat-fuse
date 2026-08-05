@@ -322,7 +322,7 @@ static void test_delete_frees_cached_subdir(void)
     cached->sub_dirs = calloc(1, sizeof(struct fat_dir_context *));
     ctx.sub_dirs[0] = cached;
 
-    int rc = far_dir_entry_delete(&ctx, 0);
+    int rc = fat_dir_entry_delete(&ctx, 0);
     assert(rc >= 0);
     /* the fix: the stale cache entry must be gone (freed), not just left
      * dangling for fat_dir_create_entry() to silently overwrite/leak later */

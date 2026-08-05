@@ -1076,7 +1076,7 @@ int _fat_dir_count_lfn_entries(struct fat_dir_context *dir_ctx, int index)
     return count;
 }
 
-int far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
+int fat_dir_entry_delete(struct fat_dir_context *dir_ctx, int index)
 {
     int rc = 0;
     struct fat_context *fat_ctx = dir_ctx->fat_ctx;
@@ -1407,7 +1407,7 @@ error:
 }
 
 /* rename a file in same dir */
-int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
+int fat_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name)
 {
     int rc = 0;
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
@@ -1518,7 +1518,7 @@ error:
     return rc;
 }
 
-int far_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr)
+int fat_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr)
 {
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
 

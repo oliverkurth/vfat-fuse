@@ -215,7 +215,7 @@ static int fatfuse_chmod(const char *path, mode_t mode,
     else
         attr |= FAT_ATTR_READ_ONLY;
 
-    if (far_dir_entry_set_attr(dir_ctx, index, attr) != 0)
+    if (fat_dir_entry_set_attr(dir_ctx, index, attr) != 0)
         return -EIO;
 
     return 0;
@@ -348,7 +348,7 @@ static int fatfuse_unlink(const char *path)
     if (entry->attr & FAT_ATTR_DIRECTORY)
         return -EISDIR;
 
-    far_dir_entry_delete(dir_ctx, index);
+    fat_dir_entry_delete(dir_ctx, index);
 
     return 0;
 }
@@ -381,7 +381,7 @@ static int fatfuse_rmdir(const char *path)
     if (!fat_dir_is_empty(subdir_ctx))
         return -ENOTEMPTY;
 
-    far_dir_entry_delete(dir_ctx, index);
+    fat_dir_entry_delete(dir_ctx, index);
 
     return 0;
 }
@@ -477,7 +477,7 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
                 return -ENOTEMPTY;
         }
 
-        if (far_dir_entry_delete(dest_dir_ctx, dest_index) < 0)
+        if (fat_dir_entry_delete(dest_dir_ctx, dest_index) < 0)
             return -EIO;
     }
 
@@ -488,7 +488,7 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     char *dir_to = dirname(path_copy_dir_to);
 
     if (strcmp(dir_from, dir_to) == 0) {
-        if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
+        if (fat_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
             return errno ? -errno : -EIO;
     } else {
         struct fat_dir_context *dir_ctx_to = _fatfuse_find_dir_context(dir_ctx_root, to);
