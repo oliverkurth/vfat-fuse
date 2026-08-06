@@ -475,7 +475,6 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
 /* clusters need to be allocated already */
 ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, const void *buf, off_t pos, size_t len)
 {
-    int rc = 0;
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
     int32_t max_chain = _fat_max_chain_length(fat_ctx);
@@ -527,8 +526,6 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
         }
     }
     return ptr - (uint8_t *)buf;
-error:
-    return rc;
 }
 
 ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count)
