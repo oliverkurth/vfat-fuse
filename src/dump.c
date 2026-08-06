@@ -293,7 +293,6 @@ int main(int argc, char *argv[])
                         } else
                             print_dir_entry(dir_ctx, entry);
                     } else if (strcmp(op, "cat") == 0) {
-                        struct fat_file_context *file_ctx = init_fat_file_context(fat_ctx, fat_dir_entry_get_cluster(entry), entry->filesize);
                         int rd;
                         char buf[333];
                         off_t pos = 0;
@@ -303,7 +302,6 @@ int main(int argc, char *argv[])
                             }
                             pos += rd;
                         }
-                        free_fat_file_context(file_ctx);
                     } else if (strcmp(op, "attr") == 0) {
                         print_attr(dir_ctx, entry);
                     }

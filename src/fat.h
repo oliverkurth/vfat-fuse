@@ -4,6 +4,23 @@
 #include <asm/byteorder.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
+
+#define check_cond(COND) if(!(COND)) { \
+    fprintf(stderr, "check_cond failed in %s line %d\n", \
+        __FUNCTION__, __LINE__); \
+    rc = -1; \
+    ((void)(rc)); /* suppress "set but not used" warning */ \
+    goto error; \
+}
+
+#define check_ptr(ptr) if(!(ptr)) { \
+    fprintf(stderr, "check_ptr failed in %s line %d\n", \
+        __FUNCTION__, __LINE__); \
+    rc = -1; \
+    ((void)(rc)); /* suppress "set but not used" warning */ \
+    goto error; \
+}
 
 /* on disk boot sector */
 
@@ -159,13 +176,6 @@ struct fat_dir_context {
     struct fat_dir_context **sub_dirs;
 };
 
-struct fat_file_context {
-    struct fat_context *fat_ctx;
-    size_t size;
-    off_t current_pos;
-    int32_t current_cluster;
-};
-
 struct fat_context *init_fat_context(int fd);
 void free_fat_context(struct fat_context *ctx);
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
@@ -178,12 +188,8 @@ uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t
 int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 int32_t fat_chain_last_cluster(struct fat_context *fat_ctx, int32_t first);
 
-struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
-void free_fat_file_context(struct fat_file_context *ctx);
-
 int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 
-struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry, void *buf, off_t pos, size_t len);
 ssize_t fat_file_pwrite(struct fat_dir_context *dir_ctx, int index, const void *buf, off_t pos, size_t len);
 ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count);

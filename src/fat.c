@@ -15,30 +15,17 @@
 #include <wchar.h>
 #include "fat.h"
 
-#define check_cond(COND) if(!(COND)) { \
-    fprintf(stderr, "check_cond failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
-#define check_ptr(ptr) if(!(ptr)) { \
-    fprintf(stderr, "check_ptr failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
 struct fat_context *init_fat_context(int fd)
 {
     struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
     int rc;
 
+    if (!ctx)
+        return NULL;
+
     rc = read(fd, &ctx->bootsector, sizeof(ctx->bootsector));
     if (rc != sizeof(ctx->bootsector))
-        return NULL;
+        goto error;
 
     rc = read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
     if (rc != sizeof(ctx->bootsector_ext))
@@ -93,6 +80,10 @@ struct fat_context *init_fat_context(int fd)
         int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
         ctx->fat32 = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
+        if (!ctx->fat32) {
+            fprintf(stderr, "init_fat_context: allocating FAT32 table failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fat32,
                    ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
@@ -108,6 +99,10 @@ struct fat_context *init_fat_context(int fd)
         ctx->fat_entries = (ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector) / sizeof(uint32_t);
 
         ctx->fs_info = malloc(sizeof(struct fat_fsinfo));
+        if (!ctx->fs_info) {
+            fprintf(stderr, "init_fat_context: allocating fsinfo failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fs_info,
                    sizeof(struct fat_fsinfo),
@@ -123,6 +118,10 @@ struct fat_context *init_fat_context(int fd)
         int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
 
         ctx->fat16 = malloc(ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector);
+        if (!ctx->fat16) {
+            fprintf(stderr, "init_fat_context: allocating FAT16/12 table failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fat16,
                    ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector,
@@ -259,22 +258,6 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
         }
     }
     return count;
-}
-
-void free_fat_file_context(struct fat_file_context *ctx)
-{
-    if (ctx) free(ctx);
-}
-
-struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size)
-{
-    struct fat_file_context *ctx = calloc(sizeof(struct fat_file_context), 1);
-    ctx->fat_ctx = fat_ctx;
-    ctx->current_cluster = first_cluster;
-    ctx->current_pos = 0;
-    ctx->size = size;
-
-    return ctx;
 }
 
 int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster)
@@ -492,7 +475,6 @@ ssize_t fat_file_pread(struct fat_context *fat_ctx, struct fat_dir_entry *entry,
 /* clusters need to be allocated already */
 ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster, const void *buf, off_t pos, size_t len)
 {
-    int rc = 0;
     uint8_t *ptr = (uint8_t *)buf;
     uint32_t bytes_per_cluster = (fat_ctx->bootsector.bytes_per_sector * fat_ctx->bootsector.sectors_per_cluster);
     int32_t max_chain = _fat_max_chain_length(fat_ctx);
@@ -544,8 +526,6 @@ ssize_t fat_file_pwrite_to_cluster(struct fat_context *fat_ctx, int32_t cluster,
         }
     }
     return ptr - (uint8_t *)buf;
-error:
-    return rc;
 }
 
 ssize_t fat_dir_write_entries(struct fat_dir_context *dir_ctx, int index, int count)
@@ -762,20 +742,27 @@ struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx)
     return ctx;
 }
 
-const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
+static
+void _fat_get_date_time(struct fat_dir_entry *entry, int type, int *date, int *time)
 {
-    int date = 0, time = 0;
+    *date = 0;
+    *time = 0;
 
     if (type == FAT_DATE_WRITE) {
-        date = entry->write_date;
-        time = entry->write_time;
+        *date = entry->write_date;
+        *time = entry->write_time;
     } else if (type == FAT_DATE_CREATION) {
-        date = entry->creation_date;
-        time = entry->creation_time;
+        *date = entry->creation_date;
+        *time = entry->creation_time;
     } else if (type == FAT_DATE_ACCESS) {
-        date = entry->last_access_date;
-        time = 0;
+        *date = entry->last_access_date;
     }
+}
+
+const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
+{
+    int date, time;
+    _fat_get_date_time(entry, type, &date, &time);
 
     int year = (date >> 9) + 1980;
     int month = (date >> 5) & 0x0f;
@@ -792,14 +779,22 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
 
 time_t fat_time(struct fat_dir_entry *entry, int type)
 {
-    time_t time;
-    char buf[20];
+    int date, time;
     struct tm tm = {0};
 
-    fat_pretty_date(entry, buf, sizeof(buf), type);
-    strptime(buf, "%Y-%m-%d %H:%M:%S", &tm);
-    time = mktime(&tm);
-    return time;
+    _fat_get_date_time(entry, type, &date, &time);
+
+    /* build struct tm directly from the packed bit fields instead of
+     * formatting to a string and re-parsing it with strptime() */
+    tm.tm_year = ((date >> 9) + 1980) - 1900;
+    tm.tm_mon  = ((date >> 5) & 0x0f) - 1;
+    tm.tm_mday = date & 0x1f;
+    tm.tm_hour = time >> 11;
+    tm.tm_min  = (time >> 5) & 0x3f;
+    tm.tm_sec  = (time & 0x1f) << 1;
+    tm.tm_isdst = -1;
+
+    return mktime(&tm);
 }
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])

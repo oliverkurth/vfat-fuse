@@ -15,23 +15,6 @@
 #include "fat.h"
 #include "fatfuse_util.h"
 
-
-#define check_cond(COND) if(!(COND)) { \
-    fprintf(stderr, "check_cond failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
-#define check_ptr(ptr) if(!(ptr)) { \
-    fprintf(stderr, "check_ptr failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
 #define safe_free(ptr) { if ((ptr) != NULL) { free(ptr); ptr = NULL; }}
 
 struct options {
@@ -127,6 +110,29 @@ struct fat_dir_entry *_fatfuse_find_entry_by_path(struct fat_dir_context *dir_ct
     return NULL;
 }
 
+/*
+ * resolves path's parent directory and the index of path's basename within
+ * it, in one call. *index is set to -1 if the parent directory itself
+ * doesn't exist (caller must check the returned dir_ctx for NULL first),
+ * or if the basename isn't found in it.
+ */
+static
+struct fat_dir_context *_fatfuse_find_dir_and_index(struct fat_dir_context *dir_ctx_root,
+                                                     const char *path, int *index)
+{
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    if (!dir_ctx) {
+        *index = -1;
+        return NULL;
+    }
+
+    char path_copy[strlen(path) + 1];
+    strcpy(path_copy, path + 1);
+
+    *index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
+    return dir_ctx;
+}
+
 static int fatfuse_getattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
@@ -185,7 +191,6 @@ static int fatfuse_chmod(const char *path, mode_t mode,
     (void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
-    struct fat_dir_entry *entry = NULL;
 
     if (data->read_only)
         return -EROFS;
@@ -196,18 +201,12 @@ static int fatfuse_chmod(const char *path, mode_t mode,
         return 0;
     }
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
-    if (!dir_ctx)
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
+    if (!dir_ctx || index < 0)
         return -ENOENT;
 
-    char path_copy[strlen(path) + 1];
-    strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index < 0)
-        return -ENOENT;
-
-    entry = &dir_ctx->entries[index];
+    struct fat_dir_entry *entry = &dir_ctx->entries[index];
 
     uint8_t attr = entry->attr;
     if (mode & S_IWUSR)
@@ -306,15 +305,9 @@ static int fatfuse_write(const char *path, const char *buf, size_t size, off_t o
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
-    if (!dir_ctx)
-        return -ENOENT;
-
-    char path_copy[strlen(path) + 1];
-    strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index < 0)
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
+    if (!dir_ctx || index < 0)
         return -ENOENT;
 
     wr = fat_file_pwrite(dir_ctx, index, buf, offset, size);
@@ -332,15 +325,9 @@ static int fatfuse_unlink(const char *path)
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
-    if (!dir_ctx)
-        return -ENOENT;
-
-    char path_copy[strlen(path) + 1];
-    strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index < 0)
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
+    if (!dir_ctx || index < 0)
         return -ENOENT;
 
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
@@ -361,15 +348,9 @@ static int fatfuse_rmdir(const char *path)
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
-    if (!dir_ctx)
-        return -ENOENT;
-
-    char path_copy[strlen(path) + 1];
-    strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index < 0)
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
+    if (!dir_ctx || index < 0)
         return -ENOENT;
 
     struct fat_dir_entry *entry = &dir_ctx->entries[index];
@@ -395,16 +376,15 @@ static int fatfuse_create(const char *path, mode_t mode,
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
     if (!dir_ctx)
         return -ENOENT;
+    if (index >= 0)
+        return -EEXIST;
 
     char path_copy[strlen(path) + 1];
     strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index >= 0)
-        return -EEXIST;
 
     index = fat_dir_create_entry(dir_ctx, basename(path_copy), 0);
     if (index < 0)
@@ -511,16 +491,15 @@ static int fatfuse_mkdir(const char *path, mode_t mode)
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
     if (!dir_ctx)
         return -ENOENT;
+    if (index >= 0)
+        return -EEXIST;
 
     char path_copy[strlen(path) + 1];
     strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index >= 0)
-        return -EEXIST;
 
     index = fat_dir_create_entry(dir_ctx, basename(path_copy), FAT_ATTR_DIRECTORY);
     if (index < 0)
@@ -540,15 +519,9 @@ static int fatfuse_utimens(const char *path, const struct timespec tv[2],
     if (data->read_only)
         return -EROFS;
 
-    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, path);
-    if (!dir_ctx)
-        return -ENOENT;
-
-    char path_copy[strlen(path) + 1];
-    strcpy(path_copy, path + 1);
-
-    int index = fat_dir_find_entry_index(dir_ctx, basename(path_copy));
-    if (index < 0)
+    int index;
+    struct fat_dir_context *dir_ctx = _fatfuse_find_dir_and_index(dir_ctx_root, path, &index);
+    if (!dir_ctx || index < 0)
         return -ENOENT;
 
     struct fat_dir_entry *entry = &dir_ctx->entries[index];

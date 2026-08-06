@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "fat.h"
@@ -332,6 +333,34 @@ static void test_delete_frees_cached_subdir(void)
     free(ctx.sub_dirs);
 }
 
+/* ---- issue 10: fat_time() decodes bit fields directly, no string round-trip ---- */
+
+static void test_fat_time_decodes_date_time_bits(void)
+{
+    struct fat_dir_entry entry = {0};
+
+    /* 2024-08-15, 13:45:36 (FAT time has 2-second resolution: 36/2 = 18) */
+    entry.write_date = (44 << 9) | (8 << 5) | 15;
+    entry.write_time = (13 << 11) | (45 << 5) | 18;
+
+    time_t t = fat_time(&entry, FAT_DATE_WRITE);
+    struct tm tm;
+    localtime_r(&t, &tm);
+
+    assert(tm.tm_year + 1900 == 2024);
+    assert(tm.tm_mon + 1 == 8);
+    assert(tm.tm_mday == 15);
+    assert(tm.tm_hour == 13);
+    assert(tm.tm_min == 45);
+    assert(tm.tm_sec == 36);
+
+    /* also cross-check against the (independently bit-decoded) pretty
+     * string, so the two functions can't silently drift apart */
+    char buf[20];
+    fat_pretty_date(&entry, buf, sizeof(buf), FAT_DATE_WRITE);
+    assert(strcmp(buf, "2024-08-15 13:45:36") == 0);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -342,6 +371,7 @@ int main(void)
     RUN(test_open_check_rejects_missing_entry);
     RUN(test_force_singlethreaded_adds_dash_s_once);
     RUN(test_delete_frees_cached_subdir);
+    RUN(test_fat_time_decodes_date_time_bits);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;
