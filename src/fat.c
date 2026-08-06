@@ -15,22 +15,6 @@
 #include <wchar.h>
 #include "fat.h"
 
-#define check_cond(COND) if(!(COND)) { \
-    fprintf(stderr, "check_cond failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
-#define check_ptr(ptr) if(!(ptr)) { \
-    fprintf(stderr, "check_ptr failed in %s line %d\n", \
-        __FUNCTION__, __LINE__); \
-    rc = -1; \
-    ((void)(rc)); /* suppress "set but not used" warning */ \
-    goto error; \
-}
-
 struct fat_context *init_fat_context(int fd)
 {
     struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
