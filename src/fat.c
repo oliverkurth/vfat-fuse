@@ -261,22 +261,6 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
     return count;
 }
 
-void free_fat_file_context(struct fat_file_context *ctx)
-{
-    if (ctx) free(ctx);
-}
-
-struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size)
-{
-    struct fat_file_context *ctx = calloc(sizeof(struct fat_file_context), 1);
-    ctx->fat_ctx = fat_ctx;
-    ctx->current_cluster = first_cluster;
-    ctx->current_pos = 0;
-    ctx->size = size;
-
-    return ctx;
-}
-
 int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster)
 {
     return fat_ctx->data_start_sector + (cluster - 2) * fat_ctx->bootsector.sectors_per_cluster;
