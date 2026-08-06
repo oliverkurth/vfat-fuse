@@ -36,9 +36,12 @@ struct fat_context *init_fat_context(int fd)
     struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
     int rc;
 
+    if (!ctx)
+        return NULL;
+
     rc = read(fd, &ctx->bootsector, sizeof(ctx->bootsector));
     if (rc != sizeof(ctx->bootsector))
-        return NULL;
+        goto error;
 
     rc = read(fd, &ctx->bootsector_ext, sizeof(ctx->bootsector_ext));
     if (rc != sizeof(ctx->bootsector_ext))
@@ -93,6 +96,10 @@ struct fat_context *init_fat_context(int fd)
         int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
 
         ctx->fat32 = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
+        if (!ctx->fat32) {
+            fprintf(stderr, "init_fat_context: allocating FAT32 table failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fat32,
                    ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector,
@@ -108,6 +115,10 @@ struct fat_context *init_fat_context(int fd)
         ctx->fat_entries = (ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector) / sizeof(uint32_t);
 
         ctx->fs_info = malloc(sizeof(struct fat_fsinfo));
+        if (!ctx->fs_info) {
+            fprintf(stderr, "init_fat_context: allocating fsinfo failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fs_info,
                    sizeof(struct fat_fsinfo),
@@ -123,6 +134,10 @@ struct fat_context *init_fat_context(int fd)
         int64_t fat_sectors = ctx->bootsector.fat_size16 * ctx->bootsector.num_fats;
 
         ctx->fat16 = malloc(ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector);
+        if (!ctx->fat16) {
+            fprintf(stderr, "init_fat_context: allocating FAT16/12 table failed\n");
+            goto error;
+        }
 
         rc = pread(fd, ctx->fat16,
                    ctx->bootsector.fat_size16 * ctx->bootsector.bytes_per_sector,
