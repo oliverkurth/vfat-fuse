@@ -3,6 +3,7 @@
 #include <fuse.h>
 #include <fuse_lowlevel.h>
 #include <libgen.h>
+#include <linux/fs.h> /* RENAME_NOREPLACE, RENAME_EXCHANGE */
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 #include <errno.h>
 
 #include "fat.h"
+#include "fatfuse_util.h"
 
 
 #define check_cond(COND) if(!(COND)) { \
@@ -213,7 +215,7 @@ static int fatfuse_chmod(const char *path, mode_t mode,
     else
         attr |= FAT_ATTR_READ_ONLY;
 
-    if (far_dir_entry_set_attr(dir_ctx, index, attr) != 0)
+    if (fat_dir_entry_set_attr(dir_ctx, index, attr) != 0)
         return -EIO;
 
     return 0;
@@ -250,7 +252,7 @@ static int fatfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, "..", NULL, 0, 0);
     }
 
-    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+    for(i = 0; i < dir_ctx->num_entries && dir_ctx->entries[i].name[0]; i++) {
         struct fat_dir_entry *entry = &dir_ctx->entries[i];
         if (fat_entry_is_valid(entry)) {
             char name[256];
@@ -267,20 +269,11 @@ error:
 
 static int fatfuse_open(const char *path, struct fuse_file_info *fi)
 {
-    (void) fi;
     struct fatfuse_data *data = (struct fatfuse_data *)fuse_get_context()->private_data;
     struct fat_dir_context *dir_ctx_root = data->dir_ctx_root;
-    struct fat_dir_entry *entry = NULL;
+    struct fat_dir_entry *entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
 
-    entry = _fatfuse_find_entry_by_path(dir_ctx_root, path);
-
-    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-        if (entry->attr & FAT_ATTR_READ_ONLY)
-            return -EACCES;
-        if (data->read_only)
-            return -EROFS;
-    }
-    return 0;
+    return fatfuse_open_check(entry, fi->flags & O_ACCMODE, data->read_only);
 }
 
 static int fatfuse_read(const char *path, char *buf, size_t size, off_t offset,
@@ -355,7 +348,7 @@ static int fatfuse_unlink(const char *path)
     if (entry->attr & FAT_ATTR_DIRECTORY)
         return -EISDIR;
 
-    far_dir_entry_delete(dir_ctx, index);
+    fat_dir_entry_delete(dir_ctx, index);
 
     return 0;
 }
@@ -388,7 +381,7 @@ static int fatfuse_rmdir(const char *path)
     if (!fat_dir_is_empty(subdir_ctx))
         return -ENOTEMPTY;
 
-    far_dir_entry_delete(dir_ctx, index);
+    fat_dir_entry_delete(dir_ctx, index);
 
     return 0;
 }
@@ -428,8 +421,8 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     if (data->read_only)
         return -EROFS;
 
-    if(_fatfuse_find_entry_by_path(dir_ctx_root, to) != NULL)
-        return -EEXIST;
+    if (flags & RENAME_EXCHANGE)
+        return -EINVAL; /* atomic exchange not supported */
 
     struct fat_dir_context *dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, from);
     if (!dir_ctx) {
@@ -451,6 +444,42 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
         fprintf(stderr, "dir not found\n");
         return -ENOENT;
     }
+    bool src_is_dir = (dir_ctx->entries[index].attr & FAT_ATTR_DIRECTORY) != 0;
+
+    /*
+     * plain rename(2) (no flags) must silently replace an existing
+     * destination, matching POSIX; only RENAME_NOREPLACE should reject it.
+     */
+    struct fat_dir_entry *dest_entry = _fatfuse_find_entry_by_path(dir_ctx_root, to);
+    if (dest_entry != NULL) {
+        if (flags & RENAME_NOREPLACE)
+            return -EEXIST;
+
+        bool dest_is_dir = (dest_entry->attr & FAT_ATTR_DIRECTORY) != 0;
+        if (dest_is_dir && !src_is_dir)
+            return -EISDIR;
+        if (!dest_is_dir && src_is_dir)
+            return -ENOTDIR;
+
+        struct fat_dir_context *dest_dir_ctx = _fatfuse_find_dir_context(dir_ctx_root, to);
+        if (!dest_dir_ctx)
+            return -ENOENT;
+
+        char path_copy_dest[strlen(to) + 1];
+        strcpy(path_copy_dest, to + 1);
+        int dest_index = fat_dir_find_entry_index(dest_dir_ctx, basename(path_copy_dest));
+        if (dest_index < 0)
+            return -ENOENT;
+
+        if (dest_is_dir) {
+            struct fat_dir_context *dest_subdir = fat_dir_get_dir_context(dest_dir_ctx, dest_index);
+            if (!dest_subdir || !fat_dir_is_empty(dest_subdir))
+                return -ENOTEMPTY;
+        }
+
+        if (fat_dir_entry_delete(dest_dir_ctx, dest_index) < 0)
+            return -EIO;
+    }
 
     char path_copy_base_to[strlen(to) + 1];
     strcpy(path_copy_base_to, to + 1);
@@ -459,7 +488,7 @@ static int fatfuse_rename(const char *from, const char *to, unsigned int flags)
     char *dir_to = dirname(path_copy_dir_to);
 
     if (strcmp(dir_from, dir_to) == 0) {
-        if (far_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
+        if (fat_dir_entry_rename(dir_ctx, index, basename(path_copy_base_to)) < 0)
             return errno ? -errno : -EIO;
     } else {
         struct fat_dir_context *dir_ctx_to = _fatfuse_find_dir_context(dir_ctx_root, to);
@@ -621,6 +650,8 @@ int main(int argc, char *argv[])
     if (data.read_only) {
         printf("mounting read-only\n");
     }
+
+    fatfuse_force_singlethreaded(&args);
 
     argc_saved = args.argc;
     argv_saved = args.argv;

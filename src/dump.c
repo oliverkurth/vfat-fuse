@@ -153,11 +153,11 @@ void dump_dir_entry(struct fat_dir_entry *entry)
     }
 }
 
-void dump_dir(struct fat_dir_entry *entries)
+void dump_dir(struct fat_dir_entry *entries, int32_t num_entries)
 {
     int i;
 
-    for(i = 0; entries[i].name[0]; i++) {
+    for(i = 0; i < num_entries && entries[i].name[0]; i++) {
         dump_dir_entry(&entries[i]);
     }
 }
@@ -182,7 +182,7 @@ void list_dir(struct fat_dir_context *dir_ctx)
     if (!dir_ctx->entries)
         fat_dir_read(dir_ctx);
 
-    for(i = 0; dir_ctx->entries[i].name[0]; i++) {
+    for(i = 0; i < dir_ctx->num_entries && dir_ctx->entries[i].name[0]; i++) {
         if (fat_entry_is_valid(&dir_ctx->entries[i])) {
             print_dir_entry(dir_ctx, &dir_ctx->entries[i]);
         }
@@ -191,7 +191,7 @@ void list_dir(struct fat_dir_context *dir_ctx)
 
 void print_attr(struct fat_dir_context *dir_ctx, struct fat_dir_entry *entry)
 {
-    char sfn_pretty[12];
+    char sfn_pretty[FAT_SFN_PRETTY_SIZE];
     fat_file_sfn_pretty(entry, sfn_pretty);
     printf("     sfn: %s\n", sfn_pretty);
 
@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
         dump_info(fat_ctx);
     } else if (strcmp(op, "rootdir") == 0) {
         struct fat_dir_context *dir_ctx_root = init_fat_dir_context_root(fat_ctx);
-        dump_dir(dir_ctx_root->entries);
+        dump_dir(dir_ctx_root->entries, dir_ctx_root->num_entries);
     } else if (strcmp(op, "list") == 0 || strcmp(op, "cat") == 0 || strcmp(op, "attr") == 0){
         if (argc <= 3) {
             fprintf(stderr, "no path file given for %s\n", op);

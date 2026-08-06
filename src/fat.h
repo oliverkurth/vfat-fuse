@@ -1,3 +1,6 @@
+#ifndef FAT_H
+#define FAT_H
+
 #include <asm/byteorder.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -115,6 +118,9 @@ struct fat_fsinfo {
 #define FAT_LFN_LAST_LONG_ENTRY 0x40
 #define FAT_LFN_SEQ_MASK 0x3f
 
+/* fat_file_sfn_pretty() writes up to 8 base chars + '.' + 3 ext chars + NUL */
+#define FAT_SFN_PRETTY_SIZE 13
+
 struct fat_context {
     struct fat_boot_sector bootsector;
     union {
@@ -137,6 +143,11 @@ struct fat_context {
     int64_t rootdir16_sector;
     int64_t data_start_sector;
     int32_t num_clusters;
+
+    /* size of the loaded fat32/fat16 array in entries, or of the fat12
+     * byte array in bytes; used to bounds-check cluster numbers taken
+     * from (untrusted) on-disk directory entries before indexing it */
+    int32_t fat_entries;
 };
 
 struct fat_dir_context {
@@ -162,6 +173,10 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
 uint32_t fat_first_cluster(struct fat_context *fat_ctx);
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster);
+bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster);
+uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t value);
+int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster);
+int32_t fat_chain_last_cluster(struct fat_context *fat_ctx, int32_t first);
 
 struct fat_file_context *init_fat_file_context(struct fat_context *fat_ctx, int32_t first_cluster, size_t size);
 void free_fat_file_context(struct fat_file_context *ctx);
@@ -190,6 +205,7 @@ struct fat_dir_context *fat_dir_context_by_path(struct fat_dir_context *ctx, con
 bool fat_entry_is_valid(struct fat_dir_entry *entry);
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[]);
 wchar_t *fat_file_lfn(struct fat_dir_context *ctx, struct fat_dir_entry *entry, wchar_t buf[], size_t buf_size);
+bool fat_name_matches_entry(struct fat_dir_context *ctx, struct fat_dir_entry *entry, const char *name);
 const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type);
 time_t fat_time(struct fat_dir_entry *entry, int type);
 void fat_time_to_fat(time_t t, __le16 *pdate, __le16 *ptime);
@@ -199,9 +215,11 @@ char *wstr_to_str(const wchar_t *wstr, char *buf);
 char *fat_dir_get_entry_name(struct fat_dir_context *ctx, struct fat_dir_entry *entry, char *buf);
 
 bool fat_dir_is_empty(struct fat_dir_context *dir_ctx);
-int far_dir_entry_delete(struct fat_dir_context *dir_ctx, int index);
+int fat_dir_entry_delete(struct fat_dir_context *dir_ctx, int index);
 
 int fat_dir_create_entry(struct fat_dir_context *dir_ctx, const char *name, int attr);
-int far_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name);
+int fat_dir_entry_rename(struct fat_dir_context *dir_ctx, int index, const char *name);
 int fat_dir_entry_move(struct fat_dir_context *dir_ctx, int index, struct fat_dir_context *dir_ctx_dest, const char *name);
-int far_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr);
+int fat_dir_entry_set_attr(struct fat_dir_context *dir_ctx, int index, uint8_t attr);
+
+#endif /* FAT_H */
