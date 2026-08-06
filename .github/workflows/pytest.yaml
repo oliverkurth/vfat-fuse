@@ -1,4 +1,4 @@
-name: rhizofs pytests
+name: vfat-fuse pytests
 
 on: [pull_request, push, workflow_dispatch]
 
