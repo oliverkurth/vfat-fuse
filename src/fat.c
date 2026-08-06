@@ -762,20 +762,27 @@ struct fat_dir_context *init_fat_dir_context_root(struct fat_context *fat_ctx)
     return ctx;
 }
 
-const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
+static
+void _fat_get_date_time(struct fat_dir_entry *entry, int type, int *date, int *time)
 {
-    int date = 0, time = 0;
+    *date = 0;
+    *time = 0;
 
     if (type == FAT_DATE_WRITE) {
-        date = entry->write_date;
-        time = entry->write_time;
+        *date = entry->write_date;
+        *time = entry->write_time;
     } else if (type == FAT_DATE_CREATION) {
-        date = entry->creation_date;
-        time = entry->creation_time;
+        *date = entry->creation_date;
+        *time = entry->creation_time;
     } else if (type == FAT_DATE_ACCESS) {
-        date = entry->last_access_date;
-        time = 0;
+        *date = entry->last_access_date;
     }
+}
+
+const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_size, int type)
+{
+    int date, time;
+    _fat_get_date_time(entry, type, &date, &time);
 
     int year = (date >> 9) + 1980;
     int month = (date >> 5) & 0x0f;
@@ -792,14 +799,22 @@ const char *fat_pretty_date(struct fat_dir_entry *entry, char buf[], size_t buf_
 
 time_t fat_time(struct fat_dir_entry *entry, int type)
 {
-    time_t time;
-    char buf[20];
+    int date, time;
     struct tm tm = {0};
 
-    fat_pretty_date(entry, buf, sizeof(buf), type);
-    strptime(buf, "%Y-%m-%d %H:%M:%S", &tm);
-    time = mktime(&tm);
-    return time;
+    _fat_get_date_time(entry, type, &date, &time);
+
+    /* build struct tm directly from the packed bit fields instead of
+     * formatting to a string and re-parsing it with strptime() */
+    tm.tm_year = ((date >> 9) + 1980) - 1900;
+    tm.tm_mon  = ((date >> 5) & 0x0f) - 1;
+    tm.tm_mday = date & 0x1f;
+    tm.tm_hour = time >> 11;
+    tm.tm_min  = (time >> 5) & 0x3f;
+    tm.tm_sec  = (time & 0x1f) << 1;
+    tm.tm_isdst = -1;
+
+    return mktime(&tm);
 }
 
 const char *fat_file_sfn_pretty(struct fat_dir_entry *entry, char buf[])
