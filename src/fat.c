@@ -409,7 +409,7 @@ int32_t fat_allocate_cluster(struct fat_context *fat_ctx, int32_t cluster_hint)
     if (cluster_hint < 2)
         cluster_hint = 2;
 
-    for(cluster = cluster_hint; cluster < fat_ctx->num_clusters; cluster++){
+    for(cluster = cluster_hint; cluster < fat_ctx->num_clusters + 2; cluster++){
         if (fat_next_cluster(fat_ctx, cluster) == 0) {
             fat_set_cluster_eoc(fat_ctx, cluster);
             fat_write_fat_cluster(fat_ctx, cluster);

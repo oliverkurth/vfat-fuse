@@ -361,6 +361,38 @@ static void test_fat_time_decodes_date_time_bits(void)
     assert(strcmp(buf, "2024-08-15 13:45:36") == 0);
 }
 
+/* ---- fat_allocate_cluster() must consider the same range fat_free_cluster_count() does ---- */
+
+static void test_allocate_cluster_reaches_last_two_clusters(void)
+{
+    /* a tiny 8-entry FAT16 table: clusters 0/1 reserved, 2..7 usable
+     * (num_clusters = 6, valid cluster range is [2, num_clusters+2) = [2,8)) */
+    int16_t table[8] = {0};
+    struct fat_context *fat_ctx = _make_fat16_context(table, 8);
+    fat_ctx->bootsector.bytes_per_sector = 512;
+    fat_ctx->bootsector.sectors_per_cluster = 1;
+    fat_ctx->bootsector.num_fats = 1;
+    fat_ctx->bootsector.reserved_sectors_count = 1;
+    fat_ctx->fd = _make_scratch_fd();
+
+    /* clusters 2-5 already in use; only the last two (6, 7) are free -
+     * exactly the two fat_free_cluster_count() would report as available */
+    table[2] = 0xffff;
+    table[3] = 0xffff;
+    table[4] = 0xffff;
+    table[5] = 0xffff;
+
+    assert(fat_free_cluster_count(fat_ctx) == 2);
+
+    assert(fat_allocate_cluster(fat_ctx, 0) == 6);
+    assert(fat_allocate_cluster(fat_ctx, 0) == 7);
+    /* now genuinely full: must fail, not read/write out of range */
+    assert(fat_allocate_cluster(fat_ctx, 0) == -1);
+
+    close(fat_ctx->fd);
+    free(fat_ctx);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -372,6 +404,7 @@ int main(void)
     RUN(test_force_singlethreaded_adds_dash_s_once);
     RUN(test_delete_frees_cached_subdir);
     RUN(test_fat_time_decodes_date_time_bits);
+    RUN(test_allocate_cluster_reaches_last_two_clusters);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

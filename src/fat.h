@@ -187,6 +187,7 @@ bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster);
 bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster);
 uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t value);
 int fat_write_fat_cluster(struct fat_context *fat_ctx, uint32_t cluster);
+int32_t fat_allocate_cluster(struct fat_context *fat_ctx, int32_t cluster_hint);
 int32_t fat_chain_last_cluster(struct fat_context *fat_ctx, int32_t first);
 
 int64_t fat_get_sector_from_cluster(struct fat_context *fat_ctx, uint32_t cluster);
