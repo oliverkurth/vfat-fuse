@@ -16,29 +16,30 @@ static const int num_spc_candidates = sizeof(spc_candidates) / sizeof(spc_candid
 
 /*
  * Fixed-point search for the smallest FAT size (in sectors) consistent with
- * the resulting cluster count, mirroring the layout arithmetic in
- * init_fat_context() (fat.c) so that a freshly written image is read back
- * as exactly the FAT type it was written as.
+ * the resulting cluster count. Uses fat_layout_cluster_count() (fat.c) -
+ * the same formula init_fat_context() uses to read an existing filesystem
+ * - so a freshly written image is guaranteed to read back as exactly the
+ * FAT type it was written as. Note: root_entry_count is already forced to
+ * 0 for FAT_TYPE32 by choose_for_type() before it reaches here, which
+ * naturally makes fat_layout_cluster_count()'s root_dir_sectors term 0.
  */
 static bool try_layout(int type, int64_t total_sectors, int bytes_per_sector,
                         int num_fats, int spc, long reserved_sectors, long root_entry_count,
                         struct fat_layout *out)
 {
     int bits = (type == FAT_TYPE32) ? 32 : (type == FAT_TYPE16) ? 16 : 12;
-    int64_t root_dir_sectors = (type == FAT_TYPE32) ? 0 :
-        (32 * root_entry_count + bytes_per_sector - 1) / bytes_per_sector;
     int64_t fat_size = 1;
     int32_t cluster_count = 0;
     int iter;
 
     for (iter = 0; iter < 64; iter++) {
-        int64_t avail = total_sectors - reserved_sectors - root_dir_sectors - (int64_t)num_fats * fat_size;
         int64_t bytes_needed, needed_fat_size;
 
-        if (avail <= 0)
+        cluster_count = fat_layout_cluster_count(total_sectors, bytes_per_sector, spc, num_fats,
+                                                  reserved_sectors, root_entry_count, fat_size, NULL);
+        if (cluster_count < 0)
             return false;
 
-        cluster_count = avail / spc;
         bytes_needed = ((int64_t)(cluster_count + 2) * bits + 7) / 8;
         needed_fat_size = (bytes_needed + bytes_per_sector - 1) / bytes_per_sector;
         if (needed_fat_size < 1)

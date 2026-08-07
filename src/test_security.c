@@ -430,6 +430,34 @@ static void test_choose_for_type_does_not_narrow_huge_root_entries(void)
     assert(choose_for_type(FAT_TYPE16, 1000000, 512, 2, -1, huge_root_entries, -1, &out) == false);
 }
 
+/* ---- mkfs's layout search and fat.c's reader must agree, by construction ---- */
+
+static void test_mkfs_layout_matches_fat_layout_cluster_count(void)
+{
+    /* root_entry_count picked so root_entry_count*32 is NOT an exact
+     * multiple of bytes_per_sector (500*32 = 16000, 16000/512 = 31.25),
+     * so a ceiling-vs-floor rounding mismatch between two independently
+     * maintained copies of this formula would actually show up here */
+    struct fat_layout out;
+    bool ok = choose_for_type(FAT_TYPE16, 200000, 512, 2, -1, 500, -1, &out);
+    assert(ok);
+
+    int64_t data_start_sector;
+    int32_t cluster_count = fat_layout_cluster_count(200000, 512, out.sectors_per_cluster, 2,
+                                                       out.reserved_sectors, out.root_entry_count,
+                                                       out.fat_size_sectors, &data_start_sector);
+
+    /* mkfs's own layout search and fat.c's independent reader must land
+     * on the exact same cluster count for the geometry mkfs decided on -
+     * guaranteed now since try_layout() calls fat_layout_cluster_count()
+     * directly instead of maintaining its own copy of the formula */
+    assert(cluster_count == out.cluster_count);
+    /* default reserved=1 for non-FAT32; root_entry_count=500 needs
+     * ceil(500*32/512) = 32 root dir sectors */
+    assert(out.reserved_sectors == 1);
+    assert(data_start_sector == 1 + 2 * (int64_t)out.fat_size_sectors + 32);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -445,6 +473,7 @@ int main(void)
     RUN(test_needs_ftruncate_distinguishes_block_devices);
     RUN(test_choose_for_type_does_not_narrow_huge_reserved);
     RUN(test_choose_for_type_does_not_narrow_huge_root_entries);
+    RUN(test_mkfs_layout_matches_fat_layout_cluster_count);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;

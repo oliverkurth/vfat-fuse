@@ -180,6 +180,21 @@ struct fat_context *init_fat_context(int fd);
 void free_fat_context(struct fat_context *ctx);
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
 
+/*
+ * Computes the data area's starting sector and resulting cluster count
+ * for a FAT layout with the given geometry and FAT table size. This is
+ * the one formula both init_fat_context() (reading fat_size off an
+ * existing boot sector) and mkfs.vfat's layout search (trying candidate
+ * fat_size values) need to agree on, so a freshly written image reads
+ * back as exactly the FAT type it was written as. Returns -1 (and
+ * leaves *out_data_start_sector set regardless) if the geometry leaves
+ * no room for any data at all.
+ */
+int32_t fat_layout_cluster_count(int64_t total_sectors, int32_t bytes_per_sector,
+                                  int32_t sectors_per_cluster, int32_t num_fats,
+                                  int64_t reserved_sectors, int64_t root_entry_count,
+                                  int64_t fat_size_sectors, int64_t *out_data_start_sector);
+
 uint32_t fat_first_cluster(struct fat_context *fat_ctx);
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
 uint32_t fat_eoc_sentinel_for_type(int type);

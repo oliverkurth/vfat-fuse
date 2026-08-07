@@ -15,6 +15,23 @@
 #include <wchar.h>
 #include "fat.h"
 
+int32_t fat_layout_cluster_count(int64_t total_sectors, int32_t bytes_per_sector,
+                                  int32_t sectors_per_cluster, int32_t num_fats,
+                                  int64_t reserved_sectors, int64_t root_entry_count,
+                                  int64_t fat_size_sectors, int64_t *out_data_start_sector)
+{
+    int64_t root_dir_sectors = (32LL * root_entry_count + bytes_per_sector - 1) / bytes_per_sector;
+    int64_t data_start_sector = reserved_sectors + (int64_t)num_fats * fat_size_sectors + root_dir_sectors;
+    int64_t data_sectors = total_sectors - data_start_sector;
+
+    if (out_data_start_sector)
+        *out_data_start_sector = data_start_sector;
+
+    if (data_sectors <= 0)
+        return -1;
+    return (int32_t)(data_sectors / sectors_per_cluster);
+}
+
 struct fat_context *init_fat_context(int fd)
 {
     struct fat_context *ctx = calloc(sizeof(struct fat_context), 1);
@@ -58,11 +75,11 @@ struct fat_context *init_fat_context(int fd)
     if (fat_sectors == 0)
         fat_sectors = ctx->bootsector_ext.ext32.fat_size;
 
-    int32_t root_dir_start_sector = fat_start_sector + ctx->bootsector.num_fats * fat_sectors;
-    int32_t root_dir_sectors = (32 * ctx->bootsector.root_entry_count + ctx->bootsector.bytes_per_sector - 1) / ctx->bootsector.bytes_per_sector;
-    int32_t data_start_sector = root_dir_start_sector + root_dir_sectors;
-    int32_t data_sectors = total_sectors - data_start_sector;
-    int32_t cluster_count = data_sectors / ctx->bootsector.sectors_per_cluster;
+    int64_t data_start_sector;
+    int32_t cluster_count = fat_layout_cluster_count(total_sectors, ctx->bootsector.bytes_per_sector,
+                                                      ctx->bootsector.sectors_per_cluster, ctx->bootsector.num_fats,
+                                                      fat_start_sector, ctx->bootsector.root_entry_count,
+                                                      fat_sectors, &data_start_sector);
 
     ctx->num_clusters = cluster_count;
 
@@ -77,8 +94,6 @@ struct fat_context *init_fat_context(int fd)
 
     if (ctx->type == FAT_TYPE32) {
         /* FAT32 */
-        int64_t fat_sectors = ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.num_fats;
-
         ctx->fat32 = malloc(ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector);
         if (!ctx->fat32) {
             fprintf(stderr, "init_fat_context: allocating FAT32 table failed\n");
@@ -94,7 +109,7 @@ struct fat_context *init_fat_context(int fd)
             goto error;
         }
 
-        ctx->data_start_sector = fat_start_sector + fat_sectors;
+        ctx->data_start_sector = data_start_sector;
         ctx->type = FAT_TYPE32;
         ctx->fat_entries = (ctx->bootsector_ext.ext32.fat_size * ctx->bootsector.bytes_per_sector) / sizeof(uint32_t);
 
@@ -133,7 +148,7 @@ struct fat_context *init_fat_context(int fd)
            }
 
         ctx->rootdir16_sector = fat_start_sector + fat_sectors;
-        ctx->data_start_sector = ctx->rootdir16_sector + (ctx->bootsector.root_entry_count * 32) / ctx->bootsector.bytes_per_sector;
+        ctx->data_start_sector = data_start_sector;
 
         if (ctx->type == FAT_TYPE12)
             /* fat12 is a raw byte array; cluster N lives at byte N+N/2 */
