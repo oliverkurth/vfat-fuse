@@ -403,6 +403,33 @@ static void test_needs_ftruncate_distinguishes_block_devices(void)
     assert(mkfs_needs_ftruncate(S_IFBLK) == false);
 }
 
+/* ---- mkfs: huge -R/-r values must not narrow to a negative int and
+ * silently fall back to the default instead of being honored/rejected ---- */
+
+static void test_choose_for_type_does_not_narrow_huge_reserved(void)
+{
+    struct fat_layout out;
+
+    /* > INT32_MAX: with an `int user_reserved` parameter this used to wrap
+     * negative, making `(user_reserved > 0)` false and silently substituting
+     * the default reserved-sector count (which would leave plenty of room
+     * and let the layout search succeed - the actual explicit request,
+     * correctly honored, leaves no room at all and must be rejected). */
+    long huge_reserved = 3000000000L;
+
+    assert(choose_for_type(FAT_TYPE16, 1000000, 512, 2, -1, -1, huge_reserved, &out) == false);
+}
+
+static void test_choose_for_type_does_not_narrow_huge_root_entries(void)
+{
+    struct fat_layout out;
+    long huge_root_entries = 3000000000L;
+
+    /* forcing FAT16 (not auto_choose_layout) since root_entries is forced
+     * to 0 for FAT32 regardless - a FAT32 fallback would mask the bug */
+    assert(choose_for_type(FAT_TYPE16, 1000000, 512, 2, -1, huge_root_entries, -1, &out) == false);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -416,6 +443,8 @@ int main(void)
     RUN(test_fat_time_decodes_date_time_bits);
     RUN(test_allocate_cluster_reaches_last_two_clusters);
     RUN(test_needs_ftruncate_distinguishes_block_devices);
+    RUN(test_choose_for_type_does_not_narrow_huge_reserved);
+    RUN(test_choose_for_type_does_not_narrow_huge_root_entries);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;
