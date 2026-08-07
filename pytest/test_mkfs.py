@@ -224,6 +224,18 @@ def test_forced_fat_type_too_large_fails(tmp_path):
     assert result.returncode != 0
 
 
+def test_fat32_reserved_too_small_for_fsinfo_rejected(tmp_path):
+    img = tmp_path / "smallreserved32.img"
+    # FAT32's FSInfo sector is hardcoded at sector index 1; with -R 1 the
+    # FAT table would start at the same sector and overwrite it. Must be
+    # rejected (as "no valid layout found") rather than silently clobbering
+    # FSInfo - this fails during layout search, after the target file is
+    # created/sized, so unlike the -S/-R/-r range checks this doesn't mean
+    # the file is untouched, just that no filesystem is written to it.
+    result = run_mkfs("-F", "32", "-R", "1", str(img), str(1024 * 1024))
+    assert result.returncode != 0
+
+
 def test_invalid_fat_type_rejected(tmp_path):
     img = tmp_path / "badtype.img"
     result = run_mkfs("-F", "99", str(img), "8192")

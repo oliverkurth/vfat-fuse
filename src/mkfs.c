@@ -132,6 +132,13 @@ static bool try_layout(int type, int64_t total_sectors, int bytes_per_sector,
     } else {
         if (cluster_count <= 65525)
             return false;
+        /* FAT32's FSInfo sector lives at the fixed index
+         * FAT32_FSINFO_SECTOR; reserved_sectors must leave it (and the
+         * boot sector at index 0) before the FAT table begins at
+         * fat_start_sector == reserved_sectors, or the FAT write clobbers
+         * the FSInfo sector that was just written */
+        if (reserved_sectors <= FAT32_FSINFO_SECTOR)
+            return false;
     }
 
     out->type = type;
