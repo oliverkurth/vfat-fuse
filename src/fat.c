@@ -64,7 +64,7 @@ struct fat_context *init_fat_context(int fd)
     int32_t data_sectors = total_sectors - data_start_sector;
     int32_t cluster_count = data_sectors / ctx->bootsector.sectors_per_cluster;
 
-    ctx->num_clusters = (total_sectors - fat_sectors * ctx->bootsector.num_fats - ctx->bootsector.reserved_sectors_count) / ctx->bootsector.sectors_per_cluster;
+    ctx->num_clusters = cluster_count;
 
     /* FAT type only determined by cluster count */
     if (cluster_count <= 4085) {
@@ -252,7 +252,7 @@ int32_t fat_chain_last_cluster(struct fat_context *fat_ctx, int32_t first)
 int32_t fat_free_cluster_count(struct fat_context *fat_ctx)
 {
     int32_t count = 0, i;
-    for (i = 0; i < fat_ctx->num_clusters; i++) {
+    for (i = 2; i < fat_ctx->num_clusters + 2; i++) {
         if (fat_next_cluster(fat_ctx, i) == 0) {
             count++;
         }
