@@ -258,6 +258,33 @@ def test_boot_signature_at_fixed_offset_regardless_of_sector_size(tmp_path):
     assert fsck(str(img)).returncode == 0
 
 
+def test_sector_size_above_16bit_field_range_rejected(tmp_path):
+    img = tmp_path / "hugesector.img"
+    # 65536 is a power of two but doesn't fit the on-disk 16-bit
+    # bytes_per_sector field (it would truncate to 0). Large enough
+    # BLOCK-COUNT that, without an upfront check, the layout search would
+    # succeed and mkfs would only fail later during its own re-open
+    # verification - after already creating/writing the device. Must
+    # instead be rejected during argument parsing, before touching it.
+    result = run_mkfs("-S", "65536", str(img), str(64 * 1024))
+    assert result.returncode != 0
+    assert not img.exists()
+
+
+def test_max_valid_sector_size_accepted(tmp_path):
+    img = tmp_path / "maxsector.img"
+    # force FAT12: with only 2048 total (32768-byte) sectors, auto-detection
+    # (which hints by total *bytes*, 64 MiB -> FAT16) can't find a layout,
+    # since the resulting cluster count from so few large sectors falls
+    # below FAT16's minimum - unrelated to the sector-size fix being tested.
+    result = run_mkfs("-F", "12", "-S", "32768", str(img), str(64 * 1024))
+    assert result.returncode == 0, result.stderr
+
+    bs = parse_boot_sector(str(img))
+    assert bs["bytes_per_sector"] == 32768
+    assert fsck(str(img)).returncode == 0
+
+
 # ---------------------------------------------------------------------------
 # volume label (-n / -L)
 # ---------------------------------------------------------------------------

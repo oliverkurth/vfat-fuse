@@ -54,7 +54,7 @@ static void usage(const char *prog)
         "  -r ROOT-ENTRIES   root directory entries for FAT12/16 (default: 512)\n"
         "  -R RESERVED       number of reserved sectors (default: 1, or 32 for FAT32)\n"
         "  -s SECTORS        sectors per cluster, a power of two 1..128 (default: automatic)\n"
-        "  -S SECTOR-SIZE    bytes per sector, a power of two >= 512 (default: 512)\n"
+        "  -S SECTOR-SIZE    bytes per sector, a power of two 512..32768 (default: 512)\n"
         "  -v                verbose\n"
         "  -h                this help\n",
         prog);
@@ -321,8 +321,11 @@ int main(int argc, char *argv[])
             break;
         case 'S':
             bytes_per_sector = strtol(optarg, NULL, 10);
-            if (!is_pow2(bytes_per_sector) || bytes_per_sector < 512) {
-                fprintf(stderr, "invalid sector size '%s' (must be a power of two >= 512)\n", optarg);
+            /* upper bound: 32768 is the largest power of two that still
+             * fits the on-disk 16-bit bytes_per_sector field; anything
+             * bigger (e.g. 65536) would silently truncate to 0 on disk */
+            if (!is_pow2(bytes_per_sector) || bytes_per_sector < 512 || bytes_per_sector > 32768) {
+                fprintf(stderr, "invalid sector size '%s' (must be a power of two, 512..32768)\n", optarg);
                 return 1;
             }
             break;
