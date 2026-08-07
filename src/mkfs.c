@@ -476,9 +476,13 @@ int main(int argc, char *argv[])
             memcpy(ext16->file_system_type, (type == FAT_TYPE12) ? "FAT12   " : "FAT16   ", 8);
         }
 
-        /* end-of-sector boot signature, at the very end of the logical sector */
-        bootsector_buf[bootsector_buf_size - 2] = 0x55;
-        bootsector_buf[bootsector_buf_size - 1] = 0xaa;
+        /*
+         * boot sector signature: always at the fixed byte offset 510/511
+         * per the FAT spec, regardless of bytes_per_sector (bootsector_buf
+         * is at least 512 bytes since -S rejects values below that).
+         */
+        bootsector_buf[510] = 0x55;
+        bootsector_buf[511] = 0xaa;
 
         if (pwrite(fd, bootsector_buf, bootsector_buf_size, 0) != (ssize_t)bootsector_buf_size) {
             fprintf(stderr, "%s: writing boot sector failed: %s\n", path, strerror(errno));

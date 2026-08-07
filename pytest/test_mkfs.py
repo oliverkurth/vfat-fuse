@@ -237,6 +237,28 @@ def test_invalid_sectors_per_cluster_rejected(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# sector size (-S)
+# ---------------------------------------------------------------------------
+
+def test_boot_signature_at_fixed_offset_regardless_of_sector_size(tmp_path):
+    img = tmp_path / "bigsector.img"
+    result = run_mkfs("-S", "4096", str(img), str(4 * 1024))
+    assert result.returncode == 0, result.stderr
+
+    bs = parse_boot_sector(str(img))
+    assert bs["bytes_per_sector"] == 4096
+
+    # the 0x55AA boot signature is fixed at byte offset 510/511 by the FAT
+    # spec regardless of sector size - not at the end of the (4096-byte)
+    # logical sector.
+    with open(img, "rb") as f:
+        raw = f.read(512)
+    assert raw[510:512] == b"\x55\xaa"
+
+    assert fsck(str(img)).returncode == 0
+
+
+# ---------------------------------------------------------------------------
 # volume label (-n / -L)
 # ---------------------------------------------------------------------------
 
