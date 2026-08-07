@@ -1,7 +1,7 @@
 SRC_DUMP := fat.c dump.c
 SRC_FUSE := fat.c fatfuse_util.c fat-fuse.c
-SRC_MKFS := fat.c mkfs.c
-SRC_TEST := fat.c fatfuse_util.c test_security.c
+SRC_MKFS := fat.c mkfs_util.c mkfs.c
+SRC_TEST := fat.c fatfuse_util.c mkfs_util.c test_security.c
 
 OUTPUTDIR := ../build
 

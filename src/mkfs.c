@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "fat.h"
+#include "mkfs_util.h"
 
 #define DEFAULT_MEDIA 0xf8
 #define DEFAULT_DRIVE_NUM 0x80
@@ -377,8 +378,27 @@ int main(int argc, char *argv[])
     }
 
     if (block_count > 0) {
+        struct stat st;
+
         total_bytes = (int64_t)block_count * 1024;
-        if (ftruncate(fd, total_bytes) != 0) {
+
+        if (fstat(fd, &st) != 0) {
+            fprintf(stderr, "%s: cannot stat: %s\n", path, strerror(errno));
+            goto out;
+        }
+
+        if (!mkfs_needs_ftruncate(st.st_mode)) {
+            /* block devices have a fixed size; ftruncate() can't change
+             * it (EINVAL on Linux) - just check BLOCK-COUNT actually fits */
+            int64_t dev_bytes = device_size_bytes(fd, path);
+            if (dev_bytes <= 0)
+                goto out;
+            if (total_bytes > dev_bytes) {
+                fprintf(stderr, "%s: BLOCK-COUNT (%lld bytes) exceeds device size (%lld bytes)\n",
+                        path, (long long)total_bytes, (long long)dev_bytes);
+                goto out;
+            }
+        } else if (ftruncate(fd, total_bytes) != 0) {
             fprintf(stderr, "%s: cannot set size: %s\n", path, strerror(errno));
             goto out;
         }

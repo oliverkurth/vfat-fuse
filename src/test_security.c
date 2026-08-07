@@ -14,11 +14,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "fat.h"
 #include "fatfuse_util.h"
+#include "mkfs_util.h"
 
 static int tests_run = 0;
 
@@ -393,6 +395,14 @@ static void test_allocate_cluster_reaches_last_two_clusters(void)
     free(fat_ctx);
 }
 
+/* ---- mkfs: ftruncate() must not be attempted on a block device ---- */
+
+static void test_needs_ftruncate_distinguishes_block_devices(void)
+{
+    assert(mkfs_needs_ftruncate(S_IFREG) == true);
+    assert(mkfs_needs_ftruncate(S_IFBLK) == false);
+}
+
 int main(void)
 {
     RUN(test_sfn_pretty_full_8dot3_no_overflow);
@@ -405,6 +415,7 @@ int main(void)
     RUN(test_delete_frees_cached_subdir);
     RUN(test_fat_time_decodes_date_time_bits);
     RUN(test_allocate_cluster_reaches_last_two_clusters);
+    RUN(test_needs_ftruncate_distinguishes_block_devices);
 
     fprintf(stderr, "%d test(s) passed\n", tests_run);
     return 0;
