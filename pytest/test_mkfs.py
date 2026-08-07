@@ -391,6 +391,14 @@ def test_reserved_sectors_above_16bit_field_range_rejected(tmp_path):
     assert not img.exists()
 
 
+def test_root_entries_above_16bit_field_range_rejected(tmp_path):
+    img = tmp_path / "hugeroot.img"
+    # same truncation problem as -R above, for root_entry_count
+    result = run_mkfs("-F", "16", "-r", "65600", str(img), str(128 * 1024))
+    assert result.returncode != 0
+    assert not img.exists()
+
+
 # ---------------------------------------------------------------------------
 # end-to-end: mount the created filesystem and use it
 # ---------------------------------------------------------------------------

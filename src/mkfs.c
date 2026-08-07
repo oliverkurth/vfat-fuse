@@ -51,7 +51,7 @@ static void usage(const char *prog)
         "  -L LABEL          same as -n\n"
         "  -i VOLUME-ID      32-bit hexadecimal volume id (default: derived from time)\n"
         "  -f NUM-FATS       number of FAT copies (default: 2)\n"
-        "  -r ROOT-ENTRIES   root directory entries for FAT12/16 (default: 512)\n"
+        "  -r ROOT-ENTRIES   root directory entries for FAT12/16, 1..65535 (default: 512)\n"
         "  -R RESERVED       number of reserved sectors, 1..65535 (default: 1, or 32 for FAT32)\n"
         "  -s SECTORS        sectors per cluster, a power of two 1..128 (default: automatic)\n"
         "  -S SECTOR-SIZE    bytes per sector, a power of two 512..32768 (default: 512)\n"
@@ -300,8 +300,11 @@ int main(int argc, char *argv[])
             break;
         case 'r':
             user_root_entries = strtol(optarg, NULL, 10);
-            if (user_root_entries < 1) {
-                fprintf(stderr, "invalid root directory entry count '%s'\n", optarg);
+            /* root_entry_count is a 16-bit on-disk field; anything above
+             * 65535 would silently truncate, desyncing it from the root
+             * directory size mkfs actually wrote */
+            if (user_root_entries < 1 || user_root_entries > 65535) {
+                fprintf(stderr, "invalid root directory entry count '%s' (must be 1..65535)\n", optarg);
                 return 1;
             }
             break;
