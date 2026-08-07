@@ -52,7 +52,7 @@ static void usage(const char *prog)
         "  -i VOLUME-ID      32-bit hexadecimal volume id (default: derived from time)\n"
         "  -f NUM-FATS       number of FAT copies (default: 2)\n"
         "  -r ROOT-ENTRIES   root directory entries for FAT12/16 (default: 512)\n"
-        "  -R RESERVED       number of reserved sectors (default: 1, or 32 for FAT32)\n"
+        "  -R RESERVED       number of reserved sectors, 1..65535 (default: 1, or 32 for FAT32)\n"
         "  -s SECTORS        sectors per cluster, a power of two 1..128 (default: automatic)\n"
         "  -S SECTOR-SIZE    bytes per sector, a power of two 512..32768 (default: 512)\n"
         "  -v                verbose\n"
@@ -307,8 +307,11 @@ int main(int argc, char *argv[])
             break;
         case 'R':
             user_reserved = strtol(optarg, NULL, 10);
-            if (user_reserved < 1) {
-                fprintf(stderr, "invalid reserved sector count '%s'\n", optarg);
+            /* reserved_sectors_count is a 16-bit on-disk field; anything
+             * above 65535 would silently truncate, desyncing it from the
+             * offsets mkfs actually writes data to */
+            if (user_reserved < 1 || user_reserved > 65535) {
+                fprintf(stderr, "invalid reserved sector count '%s' (must be 1..65535)\n", optarg);
                 return 1;
             }
             break;

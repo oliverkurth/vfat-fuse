@@ -380,6 +380,17 @@ def test_root_entries_and_reserved_override(tmp_path):
     assert fsck(str(img)).returncode == 0
 
 
+def test_reserved_sectors_above_16bit_field_range_rejected(tmp_path):
+    img = tmp_path / "hugereserved.img"
+    # 65600 mod 65536 = 64: a plausible-looking but wrong on-disk value.
+    # Large enough BLOCK-COUNT that the layout search would otherwise
+    # succeed, so this must be rejected during argument parsing rather
+    # than after computing offsets from the real value and writing there.
+    result = run_mkfs("-F", "16", "-R", "65600", str(img), str(128 * 1024))
+    assert result.returncode != 0
+    assert not img.exists()
+
+
 # ---------------------------------------------------------------------------
 # end-to-end: mount the created filesystem and use it
 # ---------------------------------------------------------------------------
