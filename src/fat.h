@@ -182,6 +182,7 @@ int32_t fat_free_cluster_count(struct fat_context *fat_ctx);
 
 uint32_t fat_first_cluster(struct fat_context *fat_ctx);
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster);
+uint32_t fat_eoc_sentinel_for_type(int type);
 bool fat_cluster_is_eoc(struct fat_context *fat_ctx, uint32_t cluster);
 bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster);
 uint32_t fat_set_cluster(struct fat_context *fat_ctx, uint32_t cluster, uint32_t value);

@@ -1,11 +1,13 @@
 SRC_DUMP := fat.c dump.c
 SRC_FUSE := fat.c fatfuse_util.c fat-fuse.c
+SRC_MKFS := fat.c mkfs.c
 SRC_TEST := fat.c fatfuse_util.c test_security.c
 
 OUTPUTDIR := ../build
 
 EXE_DUMP := $(OUTPUTDIR)/vfat-dump
 EXE_FUSE := $(OUTPUTDIR)/vfat-fuse
+EXE_MKFS := $(OUTPUTDIR)/mkfs.vfat
 EXE_TEST := $(OUTPUTDIR)/test-security
 
 PREFIX ?= /usr/local
@@ -20,17 +22,21 @@ LDFLAGS_TEST := $(LDFLAGS) -fsanitize=address,undefined $$(pkg-config fuse3 --li
 
 OBJS_DUMP := $(addprefix $(OUTPUTDIR)/, $(SRC_DUMP:%.c=%.o))
 OBJS_FUSE := $(addprefix $(OUTPUTDIR)/, $(SRC_FUSE:%.c=%.o))
+OBJS_MKFS := $(addprefix $(OUTPUTDIR)/, $(SRC_MKFS:%.c=%.o))
 OBJS_TEST := $(addprefix $(OUTPUTDIR)/, $(SRC_TEST:%.c=%.san.o))
 
 default: all
 
-all: $(EXE_DUMP) $(EXE_FUSE)
+all: $(EXE_DUMP) $(EXE_FUSE) $(EXE_MKFS)
 
 $(EXE_DUMP): $(OBJS_DUMP) $(OUTPUTDIR)
 	$(CC) -o $@ $(OBJS_DUMP) $(LDFLAGS)
 
 $(EXE_FUSE): $(OBJS_FUSE) $(OUTPUTDIR)
 	$(CC) -o $@ $(OBJS_FUSE) $(LDFLAGS_FUSE)
+
+$(EXE_MKFS): $(OBJS_MKFS) $(OUTPUTDIR)
+	$(CC) -o $@ $(OBJS_MKFS) $(LDFLAGS)
 
 $(EXE_TEST): $(OBJS_TEST) | $(OUTPUTDIR)
 	$(CC) -o $@ $(OBJS_TEST) $(LDFLAGS_TEST)
@@ -55,6 +61,7 @@ test: $(EXE_TEST)
 
 install:
 	mkdir -p $(DESTDIR)/$(PREFIX)/bin && cp $(EXE_DUMP) $(EXE_FUSE) $(DESTDIR)/$(PREFIX)/bin/
+	cp $(EXE_MKFS) $(DESTDIR)/$(PREFIX)/bin/vfat-mkfs
 
 clean:
 	rm -rf $(OUTPUTDIR)

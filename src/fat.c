@@ -179,16 +179,23 @@ bool fat_cluster_in_range(struct fat_context *fat_ctx, uint32_t cluster)
     return cluster < (uint32_t)fat_ctx->fat_entries;
 }
 
-/* an out-of-range cluster is treated as an immediate end-of-chain so that
- * callers/traversals stop cleanly instead of reading/writing out of bounds */
-static uint32_t _fat_eoc_sentinel(struct fat_context *fat_ctx)
+/* end-of-chain marker for the given FAT type. An out-of-range cluster is
+ * treated as an immediate end-of-chain so that callers/traversals stop
+ * cleanly instead of reading/writing out of bounds; also used by mkfs.vfat
+ * to seed a freshly created FAT table. */
+uint32_t fat_eoc_sentinel_for_type(int type)
 {
-    if (fat_ctx->type == FAT_TYPE32)
+    if (type == FAT_TYPE32)
         return 0x0fffffff;
-    else if (fat_ctx->type == FAT_TYPE16)
+    else if (type == FAT_TYPE16)
         return 0xffff;
     else
         return 0xfff;
+}
+
+static uint32_t _fat_eoc_sentinel(struct fat_context *fat_ctx)
+{
+    return fat_eoc_sentinel_for_type(fat_ctx->type);
 }
 
 uint32_t fat_next_cluster(struct fat_context *fat_ctx, uint32_t cluster)
