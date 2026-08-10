@@ -61,7 +61,7 @@ test: $(EXE_TEST)
 
 install:
 	mkdir -p $(DESTDIR)/$(PREFIX)/bin && cp $(EXE_DUMP) $(EXE_FUSE) $(DESTDIR)/$(PREFIX)/bin/
-	cp $(EXE_MKFS) $(DESTDIR)/$(PREFIX)/bin/vfat-mkfs
+	mkdir -p $(DESTDIR)/$(PREFIX)/sbin && cp $(EXE_MKFS) $(DESTDIR)/$(PREFIX)/sbin/vfat-mkfs
 
 clean:
 	rm -rf $(OUTPUTDIR)
